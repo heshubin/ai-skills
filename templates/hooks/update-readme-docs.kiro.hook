@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "更新文件夹README文档",
+  "description": "手动触发后，扫描工作区一级目录，检查每个一级目录下的README.md是否准确描述了该文件夹的内容，如果不符则自动更新README.md。",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "请扫描工作区一级目录（即根目录下的直接子文件夹），逐个检查其中的README.md是否准确反映了该文件夹下的实际文件和功能。对于每个一级目录的README.md：1) 先读取文件夹结构和关键文件内容，2) 再读取现有README.md，3) 如果README.md内容与实际不符或缺少重要信息，则更新它。使用中文编写README内容。不要递归检查子目录中的README.md。"
+  }
+}

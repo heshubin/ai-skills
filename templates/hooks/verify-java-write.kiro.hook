@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Java/Mapper 写入后验证",
+  "description": "写入 Java 或 mapper XML 后，验证代码真的落盘且能编译。非代码文件（md/json/sql/ts/tsx 等）一律立即跳过，不做任何检查、不输出解释。",
+  "version": "2",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "write"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "【快速否决前置】本次写入的文件若不是 .java 或 mapper 目录下的 .xml，立即结束本次钩子，不要输出任何说明文字、不要调用任何工具。\n\n仅当写入的是 .java 或 mapper XML 时执行：\n1. 用 grepSearch 确认关键代码/SQL 片段已真实写入（不要只信 str_replace 的成功返回）\n2. 检查新引用的类型是否都有 import；mapper XML 检查 resultMap 与列清单是否同步\n3. 用 getDiagnostics 检查该文件的编译错误，有错立即修\n4. 对照仓库禁令自查：禁止 SELECT *、禁止循环内单条查库（N+1）、禁止魔法数字/字符串、禁止空 catch、禁止通配符导入、@author 必须是 William.He"
+  }
+}

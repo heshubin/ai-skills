@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "代码提交",
+  "description": "手动触发后，自动检查 git 变更并生成有意义的 commit message 进行提交",
+  "version": "1",
+  "when": {
+    "type": "userTriggered"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "请执行以下操作：1. 运行 `git status` 和 `git diff --stat` 查看当前变更；2. 根据变更内容生成简洁的中文 commit message（格式：类型: 描述，如 feat: 新增XX功能、fix: 修复XX问题、docs: 更新XX文档、chore: 调整XX配置）；3. 执行 `git add -A` 然后 `git commit -m \"生成的message\"`；4. 告诉用户提交结果"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "回归测试守卫",
+  "description": "每个 spec task 完成后自动运行 pytest 回归测试，确保现有功能不被破坏",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cmd /c \"set PYTHONIOENCODING=utf-8 && set PYTHONPATH=. && cd /d d:\\workspace\\myBot\\wecom-bot && python -X utf8 tests/test_all_features_200.py\"",
+    "timeout": 120
+  }
+}

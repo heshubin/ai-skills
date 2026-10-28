@@ -1,0 +1,741 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "${api_name}：半小时实际调用量、7天同段均值、上周同期和7天峰值。",
+  "padding": {
+    "left": 55,
+    "right": 14,
+    "top": 67,
+    "bottom": 68
+  },
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "signals": [
+    {
+      "name": "ready",
+      "update": "length(data('response')) && !data('response')[0].timed_out && data('response')[0]._shards.failed==0"
+    },
+    {
+      "name": "begin",
+      "update": "ready ? floor(data('response')[0].aggregations.all.buckets[0].clock.buckets[0].from/1800000)*1800000 : 0"
+    },
+    {
+      "name": "end",
+      "update": "ready ? floor(data('response')[0].aggregations.all.buckets[0].clock.buckets[0].to/1800000)*1800000 : 0"
+    },
+    {
+      "name": "tzOffset",
+      "value": "${timezone_offset_ms}"
+    },
+    {
+      "name": "surgeK",
+      "value": "${surge_k}"
+    },
+    {
+      "name": "peakRatio",
+      "value": "${peak_ratio}"
+    },
+    {
+      "name": "minCount",
+      "value": "${surge_min_count}"
+    }
+  ],
+  "data": [
+    {
+      "name": "response",
+      "url": {
+        "index": "${index_pattern}",
+        "body": {}
+      }
+    },
+    {
+      "name": "all",
+      "source": "response",
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "ready ? datum.aggregations.all.buckets[0].target.slots.buckets : []",
+          "as": "buckets"
+        },
+        {
+          "type": "flatten",
+          "fields": [
+            "buckets"
+          ],
+          "as": [
+            "bucket"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.bucket.key",
+          "as": "time"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.bucket.doc_count",
+          "as": "calls"
+        }
+      ]
+    },
+    {
+      "name": "days",
+      "source": "response",
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "ready ? datum.aggregations.all.buckets[0].coverage.buckets : []",
+          "as": "buckets"
+        },
+        {
+          "type": "flatten",
+          "fields": [
+            "buckets"
+          ],
+          "as": [
+            "bucket"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.bucket.key",
+          "as": "day"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.bucket.doc_count",
+          "as": "records"
+        }
+      ]
+    },
+    {
+      "name": "current",
+      "source": "all",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.time>=begin && datum.time<end"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-86400000",
+          "as": "t1"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t1"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d1"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t1+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day1"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day1"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover1"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-172800000",
+          "as": "t2"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t2"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d2"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t2+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day2"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day2"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover2"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-259200000",
+          "as": "t3"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t3"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d3"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t3+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day3"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day3"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover3"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-345600000",
+          "as": "t4"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t4"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d4"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t4+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day4"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day4"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover4"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-432000000",
+          "as": "t5"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t5"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d5"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t5+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day5"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day5"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover5"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-518400000",
+          "as": "t6"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t6"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d6"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t6+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day6"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day6"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover6"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time-604800000",
+          "as": "t7"
+        },
+        {
+          "type": "lookup",
+          "from": "all",
+          "key": "time",
+          "fields": [
+            "t7"
+          ],
+          "values": [
+            "calls"
+          ],
+          "as": [
+            "d7"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "floor((datum.t7+tzOffset)/86400000)*86400000-tzOffset",
+          "as": "day7"
+        },
+        {
+          "type": "lookup",
+          "from": "days",
+          "key": "day",
+          "fields": [
+            "day7"
+          ],
+          "values": [
+            "records"
+          ],
+          "as": [
+            "cover7"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "isValid(datum.d1) && datum.cover1>0 && isValid(datum.d2) && datum.cover2>0 && isValid(datum.d3) && datum.cover3>0 && isValid(datum.d4) && datum.cover4>0 && isValid(datum.d5) && datum.cover5>0 && isValid(datum.d6) && datum.cover6>0 && isValid(datum.d7) && datum.cover7>0",
+          "as": "complete"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete ? (datum.d1+datum.d2+datum.d3+datum.d4+datum.d5+datum.d6+datum.d7)/7 : null",
+          "as": "mean"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete ? max(datum.d1,datum.d2,datum.d3,datum.d4,datum.d5,datum.d6,datum.d7) : null",
+          "as": "peak"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.cover7>0 ? datum.d7 : null",
+          "as": "weekly"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete ? sqrt((pow(datum.d1-datum.mean,2)+pow(datum.d2-datum.mean,2)+pow(datum.d3-datum.mean,2)+pow(datum.d4-datum.mean,2)+pow(datum.d5-datum.mean,2)+pow(datum.d6-datum.mean,2)+pow(datum.d7-datum.mean,2))/7) : null",
+          "as": "sigma"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete && datum.calls>=minCount && (datum.peak==0 || (datum.calls>datum.mean+surgeK*datum.sigma && datum.calls>peakRatio*datum.peak))",
+          "as": "surge"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time+tzOffset",
+          "as": "displayTime"
+        },
+        {
+          "type": "formula",
+          "expr": "isValid(datum.weekly) && datum.weekly>0 ? format((datum.calls/datum.weekly-1)*100,'+.1f')+'%' : !isValid(datum.weekly) ? '数据不足' : datum.calls>0 ? '新增' : '—'",
+          "as": "wow"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.time+86400000",
+          "as": "histTomorrow"
+        }
+      ]
+    },
+    {
+      "name": "long",
+      "source": "current",
+      "transform": [
+        {
+          "type": "fold",
+          "fields": [
+            "calls",
+            "mean",
+            "weekly",
+            "peak"
+          ],
+          "as": [
+            "metric",
+            "value"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.metric=='calls' ? '实际调用量' : datum.metric=='mean' ? '7天同段均值' : datum.metric=='weekly' ? '上周同期调用量' : '7天同段峰值'",
+          "as": "series"
+        }
+      ]
+    },
+    {
+      "name": "reference",
+      "source": "long",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.metric!='calls'"
+        }
+      ]
+    },
+    {
+      "name": "summary",
+      "source": "current",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "calls",
+            "surge"
+          ],
+          "ops": [
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "total",
+            "surges"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "extent",
+      "source": "long",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "value"
+          ],
+          "ops": [
+            "max"
+          ],
+          "as": [
+            "maxValue"
+          ]
+        }
+      ]
+    }
+  ],
+  "scales": [
+    {
+      "name": "x",
+      "type": "utc",
+      "domain": {
+        "signal": "[begin+tzOffset,end+tzOffset]"
+      },
+      "range": "width"
+    },
+    {
+      "name": "y",
+      "type": "linear",
+      "domain": {
+        "signal": "[0,length(data('extent')) ? max(1,data('extent')[0].maxValue || 0) : 1]"
+      },
+      "range": "height",
+      "nice": true,
+      "zero": true
+    },
+    {
+      "name": "color",
+      "type": "ordinal",
+      "domain": [
+        "实际调用量",
+        "7天同段均值",
+        "上周同期调用量",
+        "7天同段峰值"
+      ],
+      "range": [
+        "#4472C4",
+        "#ED7D31",
+        "#70AD47",
+        "#A6A6A6"
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "orient": "bottom",
+      "scale": "x",
+      "format": "%m-%d %H:%M",
+      "tickCount": 5,
+      "labelAngle": -15,
+      "labelFontSize": 10,
+      "title": "${timezone_label} · 每半小时",
+      "titleFontSize": 10
+    },
+    {
+      "orient": "left",
+      "scale": "y",
+      "tickCount": 5,
+      "grid": true,
+      "gridColor": "#e6e9ef",
+      "format": "~s",
+      "title": "调用量",
+      "titleFontSize": 10
+    }
+  ],
+  "legends": [
+    {
+      "fill": "color",
+      "orient": "bottom",
+      "direction": "horizontal",
+      "columns": 2,
+      "labelFontSize": 10,
+      "labelLimit": 190,
+      "symbolSize": 50,
+      "offset": 28
+    }
+  ],
+  "marks": [
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "value": -46
+          },
+          "text": {
+            "signal": "ready ? utcFormat(toDate(begin+tzOffset),'%m-%d %H:%M')+'–'+utcFormat(toDate(end+tzOffset),'%m-%d %H:%M')+'（完整半小时）' : '正在读取 ES…'"
+          },
+          "fill": {
+            "value": "#69707d"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "limit": {
+            "signal": "width"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "value": -26
+          },
+          "text": {
+            "signal": "ready && length(data('summary')) ? '窗口调用 '+format(data('summary')[0].total,',')+' 次 · 突增 '+data('summary')[0].surges+' 个时段 · '+length(data('current'))+' 个半小时' : length(data('response')) ? '查询超时或分片失败，请刷新' : ''"
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "limit": {
+            "signal": "width"
+          }
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "from": {
+        "data": "current"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "scale('x',datum.displayTime)+1"
+          },
+          "x2": {
+            "signal": "scale('x',datum.displayTime+1800000)-1"
+          },
+          "y": {
+            "scale": "y",
+            "field": "calls"
+          },
+          "y2": {
+            "scale": "y",
+            "value": 0
+          },
+          "fill": {
+            "signal": "datum.surge ? '#bd271e' : '#4472C4'"
+          },
+          "fillOpacity": {
+            "value": 0.7
+          },
+          "tooltip": {
+            "signal": "{'接口':${api_name_json},'${timezone_label}':utcFormat(toDate(datum.displayTime),'%Y-%m-%d %H:%M')+'–'+utcFormat(toDate(datum.displayTime+1800000),'%H:%M'),'实际调用量':datum.calls,'7天同段均值':datum.mean,'总体标准差':datum.sigma,'7天同段峰值':datum.peak,'上周同期调用量':datum.weekly,'周同比变化':datum.wow,'突增':datum.surge ? '是' : '否','历史覆盖':datum.complete ? '7天齐全' : '历史不足'}"
+          }
+        }
+      }
+    },
+    {
+      "type": "group",
+      "from": {
+        "facet": {
+          "name": "lines",
+          "data": "reference",
+          "groupby": "metric"
+        }
+      },
+      "marks": [
+        {
+          "type": "line",
+          "from": {
+            "data": "lines"
+          },
+          "encode": {
+            "update": {
+              "x": {
+                "signal": "scale('x',datum.displayTime+900000)"
+              },
+              "y": {
+                "scale": "y",
+                "field": "value"
+              },
+              "defined": {
+                "signal": "isValid(datum.value)"
+              },
+              "stroke": {
+                "scale": "color",
+                "field": "series"
+              },
+              "strokeWidth": {
+                "value": 2
+              },
+              "strokeDash": {
+                "signal": "datum.metric=='weekly' ? [6,3] : datum.metric=='peak' ? [2,3] : [1,0]"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "rect",
+      "from": {
+        "data": "current"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "scale('x',datum.displayTime)"
+          },
+          "x2": {
+            "signal": "scale('x',datum.displayTime+1800000)"
+          },
+          "y": {
+            "value": 0
+          },
+          "height": {
+            "signal": "height"
+          },
+          "fill": {
+            "value": "#ffffff"
+          },
+          "fillOpacity": {
+            "value": 0
+          },
+          "tooltip": {
+            "signal": "{'接口':${api_name_json},'${timezone_label}':utcFormat(toDate(datum.displayTime),'%Y-%m-%d %H:%M')+'–'+utcFormat(toDate(datum.displayTime+1800000),'%H:%M'),'实际调用量':datum.calls,'7天同段均值':datum.mean,'总体标准差':datum.sigma,'7天同段峰值':datum.peak,'上周同期调用量':datum.weekly,'周同比变化':datum.wow,'突增':datum.surge ? '是' : '否','历史覆盖':datum.complete ? '7天齐全' : '历史不足'}"
+          }
+        }
+      }
+    }
+  ]
+}

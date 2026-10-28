@@ -1,0 +1,1184 @@
+{
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "指定接口的最近完整半小时突增判定；直接读取ES聚合。",
+  "autosize": {
+    "type": "fit",
+    "contains": "padding"
+  },
+  "padding": 12,
+  "config": {
+    "kibana": {
+      "restoreSignalValuesOnRefresh": true
+    }
+  },
+  "signals": [
+    {
+      "name": "ready",
+      "update": "length(data('response')) > 0 && !data('response')[0].timed_out && data('response')[0]._shards.failed == 0"
+    },
+    {
+      "name": "target",
+      "update": "ready ? floor(data('response')[0].aggregations.all.buckets[0].clock.buckets[0].from / 1800000) * 1800000 - 1800000 : 0"
+    },
+    {
+      "name": "targetDay",
+      "update": "floor((target+tzOffset)/86400000)*86400000-tzOffset"
+    },
+    {
+      "name": "tzOffset",
+      "value": "${timezone_offset_ms}"
+    },
+    {
+      "name": "surgeK",
+      "value": "${surge_k}"
+    },
+    {
+      "name": "peakRatio",
+      "value": "${peak_ratio}"
+    },
+    {
+      "name": "minCount",
+      "value": "${surge_min_count}"
+    }
+  ],
+  "data": [
+    {
+      "name": "response",
+      "url": {
+        "index": "${index_patterns}",
+        "body": {}
+      }
+    },
+    {
+      "name": "api",
+      "values": [],
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "ready ? data('response')[0].aggregations.all.buckets[0].apis.buckets[datum.name].slots.buckets : []",
+          "as": "slots"
+        }
+      ]
+    },
+    {
+      "name": "series",
+      "source": "api",
+      "transform": [
+        {
+          "type": "flatten",
+          "fields": [
+            "slots"
+          ],
+          "as": [
+            "slot"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.slot.key",
+          "as": "time"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.slot.doc_count",
+          "as": "calls"
+        }
+      ]
+    },
+    {
+      "name": "baseline",
+      "source": "series",
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "(target-datum.time)/86400000",
+          "as": "daysAgo"
+        },
+        {
+          "type": "filter",
+          "expr": "datum.daysAgo>=1 && datum.daysAgo<=7 && datum.daysAgo==floor(datum.daysAgo)"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "name"
+          ],
+          "fields": [
+            null,
+            "calls",
+            "calls",
+            "calls"
+          ],
+          "ops": [
+            "count",
+            "mean",
+            "variancep",
+            "max"
+          ],
+          "as": [
+            "n",
+            "mean",
+            "variance",
+            "peak"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "sqrt(datum.variance)",
+          "as": "sigma"
+        }
+      ]
+    },
+    {
+      "name": "previous",
+      "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.time==target-1800000"
+        }
+      ]
+    },
+    {
+      "name": "weekly",
+      "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.time==target-7*86400000"
+        }
+      ]
+    },
+    {
+      "name": "coverage",
+      "values": [],
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "ready ? data('response')[0].aggregations.all.buckets[0].coverage.buckets[datum.service].days.buckets : []",
+          "as": "days"
+        },
+        {
+          "type": "flatten",
+          "fields": [
+            "days"
+          ],
+          "as": [
+            "day"
+          ]
+        },
+        {
+          "type": "filter",
+          "expr": "datum.day.key>=targetDay-7*86400000 && datum.day.key<targetDay"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.day.doc_count>0 ? 1 : 0",
+          "as": "present"
+        },
+        {
+          "type": "aggregate",
+          "groupby": [
+            "service"
+          ],
+          "fields": [
+            "present"
+          ],
+          "ops": [
+            "sum"
+          ],
+          "as": [
+            "covered_days"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "current",
+      "source": "series",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum.time==target"
+        },
+        {
+          "type": "lookup",
+          "from": "baseline",
+          "key": "name",
+          "fields": [
+            "name"
+          ],
+          "as": [
+            "base"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "previous",
+          "key": "name",
+          "fields": [
+            "name"
+          ],
+          "as": [
+            "prior"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "weekly",
+          "key": "name",
+          "fields": [
+            "name"
+          ],
+          "as": [
+            "week"
+          ]
+        },
+        {
+          "type": "lookup",
+          "from": "coverage",
+          "key": "service",
+          "fields": [
+            "service"
+          ],
+          "as": [
+            "coverage"
+          ]
+        },
+        {
+          "type": "formula",
+          "expr": "datum.base && datum.base.n==7 && datum.coverage && datum.coverage.covered_days==7",
+          "as": "complete"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.base ? datum.base.mean+surgeK*datum.base.sigma : 0",
+          "as": "statThreshold"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.base ? datum.base.peak*peakRatio : 0",
+          "as": "peakThreshold"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete && datum.calls>=minCount && (datum.base.peak==0 || (datum.calls>datum.statThreshold && datum.calls>datum.peakThreshold))",
+          "as": "surge"
+        },
+        {
+          "type": "formula",
+          "expr": "!datum.complete ? '基线不足' : datum.surge ? '突增' : datum.calls==0 ? '零调用' : '正常'",
+          "as": "status"
+        },
+        {
+          "type": "formula",
+          "expr": "!datum.complete ? '#a16207' : datum.surge ? '#bd271e' : datum.calls==0 ? '#69707d' : '#167759'",
+          "as": "statusColor"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.prior && datum.prior.calls>0 ? format((datum.calls/datum.prior.calls-1)*100,'+.1f')+'%' : datum.calls==0 ? '—' : '新增'",
+          "as": "mom"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.week && datum.week.calls>0 ? format((datum.calls/datum.week.calls-1)*100,'+.1f')+'%' : datum.calls==0 ? '—' : '新增'",
+          "as": "wow"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.surge ? 1 : 0",
+          "as": "surgeN"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.calls>0 ? 1 : 0",
+          "as": "activeN"
+        },
+        {
+          "type": "formula",
+          "expr": "datum.complete ? 0 : 1",
+          "as": "missingN"
+        },
+        {
+          "type": "collect",
+          "sort": {
+            "field": [
+              "surgeN",
+              "ordinal"
+            ],
+            "order": [
+              "descending",
+              "ascending"
+            ]
+          }
+        },
+        {
+          "type": "window",
+          "ops": [
+            "row_number"
+          ],
+          "as": [
+            "row"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "summary",
+      "source": "current",
+      "transform": [
+        {
+          "type": "aggregate",
+          "fields": [
+            "calls",
+            "surgeN",
+            "activeN",
+            "missingN"
+          ],
+          "ops": [
+            "sum",
+            "sum",
+            "sum",
+            "sum"
+          ],
+          "as": [
+            "total",
+            "surges",
+            "active",
+            "missing"
+          ]
+        }
+      ]
+    }
+  ],
+  "marks": [
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "0"
+          },
+          "y": {
+            "signal": "16"
+          },
+          "text": {
+            "signal": "ready ? '检测时段（${timezone_label}）：'+utcFormat(toDate(target+tzOffset),'%Y-%m-%d %H:%M')+'–'+utcFormat(toDate(target+1800000+tzOffset),'%H:%M') : '正在读取 ES…'"
+          },
+          "fontSize": {
+            "value": 17
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "0"
+          },
+          "y": {
+            "signal": "46"
+          },
+          "text": {
+            "signal": "length(data('summary')) && ready ? '监控 ${api_count} 个接口   |   突增 '+data('summary')[0].surges+'   |   有调用 '+data('summary')[0].active+'   |   总调用 '+format(data('summary')[0].total,',')+'   |   基线不足 '+data('summary')[0].missing : ''"
+          },
+          "fontSize": {
+            "value": 13
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "0"
+          },
+          "y": {
+            "signal": "72"
+          },
+          "text": {
+            "signal": "'固定最近完整半小时；近 7 天同一时段。顶部时间选择器控制接口对比图。鼠标停在接口行可查看判定详情。'"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#69707d"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "value": 94
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "value": 30
+          },
+          "fill": {
+            "value": "#edf2f7"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.006"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"接口\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.35"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"当前\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.425"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"均值 μ\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.5"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"标准差 σ\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.575"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"历史峰值\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.655"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "'μ + '+surgeK+'σ'"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.735"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "'峰值 × '+peakRatio"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.8"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"判定\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "center"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.895"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"环比\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.995"
+          },
+          "y": {
+            "signal": "109"
+          },
+          "text": {
+            "signal": "\"周同比\""
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "from": {
+        "data": "current"
+      },
+      "encode": {
+        "update": {
+          "x": {
+            "value": 0
+          },
+          "y": {
+            "signal": "124+(datum.row-1)*25"
+          },
+          "width": {
+            "signal": "width"
+          },
+          "height": {
+            "value": 25
+          },
+          "fill": {
+            "signal": "datum.surge ? '#fff1f0' : datum.row%2==0 ? '#f5f7fa' : '#ffffff'"
+          },
+          "tooltip": {
+            "signal": "{'接口':datum.name,'服务':datum.service_name,'日志path':datum.path,'当前量':datum.calls,'上半小时':datum.prior ? datum.prior.calls : null,'上周同段':datum.week ? datum.week.calls : null,'7日均值':datum.base ? datum.base.mean : null,'总体标准差':datum.base ? datum.base.sigma : null,'历史峰值':datum.base ? datum.base.peak : null,'①超过统计阈值':datum.calls>datum.statThreshold,'②超过峰值阈值':datum.calls>datum.peakThreshold,'③达到最低量':datum.calls>=minCount,'历史日有源日志':datum.coverage ? datum.coverage.covered_days : 0,'历史全零特例':datum.base && datum.base.peak==0,'状态':datum.status}"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.006"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.name"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          },
+          "limit": {
+            "signal": "width*.30"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.35"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "format(datum.calls,',')"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.425"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.base ? format(datum.base.mean,',.1f') : '—'"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.5"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.base ? format(datum.base.sigma,',.1f') : '—'"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.575"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.base ? format(datum.base.peak,',') : '—'"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.655"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "format(datum.statThreshold,',.1f')"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.735"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "format(datum.peakThreshold,',')"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.8"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.status"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "signal": "datum.statusColor"
+          },
+          "align": {
+            "value": "center"
+          },
+          "fontWeight": {
+            "value": "bold"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.895"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.mom"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "width*0.995"
+          },
+          "y": {
+            "signal": "136.5+(datum.row-1)*25"
+          },
+          "text": {
+            "signal": "datum.wow"
+          },
+          "fontSize": {
+            "value": 12
+          },
+          "fill": {
+            "value": "#343741"
+          },
+          "align": {
+            "value": "right"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      },
+      "from": {
+        "data": "current"
+      }
+    },
+    {
+      "type": "text",
+      "encode": {
+        "update": {
+          "x": {
+            "signal": "0"
+          },
+          "y": {
+            "signal": "height-16"
+          },
+          "text": {
+            "signal": "ready ? '口径：匹配指定服务的完整 Request URL 路径及后续 Request Method 标记；σ 为 7 个历史值的总体标准差。零分母显示“新增”或“—”。' : length(data('response')) ? '查询超时或存在失败分片，本次不可判定，请刷新。' : '正在读取 ES 聚合结果…'"
+          },
+          "fontSize": {
+            "value": 11
+          },
+          "fill": {
+            "value": "#69707d"
+          },
+          "align": {
+            "value": "left"
+          },
+          "fontWeight": {
+            "value": "normal"
+          },
+          "baseline": {
+            "value": "middle"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# 密钥与凭证
+*.pem
+*token*.json
+*credentials*.json
+.env
+.env.*
+
+# MCP / Kiro 本机配置（含明文密钥，禁止入库）
+settings/
+mcp.json
+
+# 运行产物
+__pycache__/
+*.pyc
+node_modules/

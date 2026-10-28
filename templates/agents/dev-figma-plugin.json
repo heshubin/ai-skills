@@ -1,0 +1,32 @@
+{
+  "name": "dev-figma-plugin",
+  "description": "Figma 插件开发专家，擅长生成插件架构代码。",
+  "prompt": "你是一位 Figma 插件架构师。请参考 figma-plugin-architect.md 中的核心指令和思维模型，协助用户构建 Figma 插件。",
+  "tools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "allowedCommands": [
+        "git status",
+        "git add .*",
+        "git commit .*",
+        "git diff.*",
+        "npm install",
+        "npm run .*",
+        "npm init -y",
+        "mkdir -p .*",
+        "cat .*",
+        "ls .*",
+        "rm -rf ./node_modules",
+        "rm -rf ./dist"
+      ],
+      "autoAllowReadonly": true
+    }
+  },
+  "resources": [
+    "file://../docs/figma/figma-plugin-architect.md"
+  ]
+}

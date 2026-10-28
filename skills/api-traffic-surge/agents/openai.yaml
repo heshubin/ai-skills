@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Traffic Surge"
+  short_description: "Half-hour API traffic comparison and surge detection"
+  default_prompt: "Use $api-traffic-surge to build and validate half-hour API traffic comparison and surge detection dashboards."

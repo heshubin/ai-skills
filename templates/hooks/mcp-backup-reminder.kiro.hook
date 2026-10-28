@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "MCP 配置备份提醒",
+  "description": "每次 mcp.json 被修改后，提醒用户执行备份命令，防止配置丢失",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/.kiro/settings/mcp.json"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "mcp.json 刚刚被修改了。请立即提醒用户执行以下备份命令，并告知备份位置：\n\n```powershell\nCopy-Item \"d:\\workspace\\myBot\\.kiro\\settings\\mcp.json\" \"d:\\workspace\\myBot\\docs\\mcp-backup\\mcp-workspace.json\" -Force\nCopy-Item \"c:\\Users\\Willi\\.kiro\\settings\\mcp.json\" \"d:\\workspace\\myBot\\docs\\mcp-backup\\mcp-user.json\" -Force\n```\n\n备份文件位置：`d:\\workspace\\myBot\\docs\\mcp-backup\\`"
+  }
+}

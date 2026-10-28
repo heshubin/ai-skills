@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Java 代码写完后自动质检",
+  "description": "每次对 Java 文件做写操作后，自动检查代码质量并优化：包括 O(n²) 写法、魔法数字、空 catch、null 防御、注释完整性，发现问题立即修正再提交。",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "write"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "你刚刚对 Java 文件做了写操作。请立即对本次修改的代码做以下自检，发现问题直接修正（不要只说问题，要改代码）：\n\n1. **性能**：是否有 List.contains / stream.anyMatch 做去重或查找？改用 Set/Map O(1) 结构。\n2. **魔法数字/字符串**：是否有硬编码的数字或字符串？改为命名常量。\n3. **空 catch**：是否有空的 catch 块？补日志或重新抛出。\n4. **null 防御**：对象字段在强转或使用前是否做了 null 检查？\n5. **注释**：类、方法、关键逻辑分支是否有中文注释？补齐缺失的。\n6. **循环内查库**：是否在循环里调用了 DAO/Service？改为批量查询+Map 预加载。\n7. **SELECT \\***：SQL 是否有 SELECT *？改为明确字段。\n\n只检查本次改动涉及的文件和方法，不要检查无关代码。检查完如有修改，直接提交。"
+  }
+}

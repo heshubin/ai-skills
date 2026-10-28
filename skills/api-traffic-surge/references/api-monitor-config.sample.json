@@ -1,0 +1,16 @@
+{
+  "dashboard_key": "demo-api-surge",
+  "dashboard_title": "示例接口半小时对比与突增检测",
+  "es_url": "https://elasticsearch.example.internal",
+  "kibana_url": "https://kibana.example.internal",
+  "timezone": "+08:00",
+  "time_field": "@timestamp",
+  "message_field": "message",
+  "surge_k": 3,
+  "peak_ratio": 2.0,
+  "surge_min_count": 200,
+  "apis": [
+    { "name": "demo/webhook", "service": "example-service", "path": "/webhook" },
+    { "name": "demo/webhook/child", "service": "example-service", "path": "/webhook/child" }
+  ]
+}
