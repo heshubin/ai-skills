@@ -181,3 +181,5 @@ Map<String, LotMaster> lotMap = lots.stream()
 | 批量插入过大 | 超过 max_allowed_packet | 分批插入，每批 500-1000 |
 | 缓存脏读 | 一级缓存在同一 SqlSession 内有效 | 写操作后刷新缓存或关闭一级缓存 |
 | LIKE 注入 | `LIKE '%${keyword}%'` | 使用 `LIKE CONCAT('%', #{keyword}, '%')` |
+| 「渲染 SQL 与改造前逐字相同」的回归断言必失败，只折叠空白也不够 | MyBatis 3.5.6 的 `DynamicContext` 用分隔符为一个空格的 `StringJoiner` 拼接各个文本节点（3.4.x 是每段之后追加一个空格，结论相同），每个 `<if>`、`<include>` 边界都会插入一个空格，`<if>` 不成立时也一样；原文在边界处本来没有空白时，把连续空白折叠成一个空格也消不掉它。例：值清单 `…,IFNULL(#{parent_task_id},0))` 在最后一个 `)` 前加 `<if>`，渲染为 `IFNULL(?,0) )`，改造前是 `IFNULL(?,0))`；`…limit 1))upc,` 改成 `<include refid="…"/>,` 后渲染为 `upc ,`，改造前是 `upc,` | 改造前后用同一组参数取 `BoundSql.getSql()`，两边经同一个 `normalizeSql(s) = s.replaceAll("\\s+", " ").replaceAll(" ?([(),]) ?", "$1").trim()`（先折叠连续空白，再去掉括号与逗号两侧的空格，最后去掉首尾空白）后断言相等；方法放在 `src/test/java` 的测试公共工具类里，用 Groovy 写时替换串用单引号 `'$1'`（双引号是 GString，编译不过）（OP-40026 `insertPickingTask`、`queryPickingData`，2026-10-30，o7-r2 审查修正） |
+| 单表 UPDATE 里多列 `IF` 共用一个判定列 | MySQL 单表 UPDATE 的 SET 按书写顺序从左到右求值，后面的赋值读到的是前面已改过的值；如 `a = IF(a = 0, …)` 之后再写 `b = IF(a = 0, …)`，b 永远看不到 0 | 每列只判断自身的未写值：`b = IF(b = #{bUnset}, …, b)`（OP-40026 首次领取两列，2026-10-30） |

@@ -1,7 +1,7 @@
 ---
 inclusion: auto
 name: picking-app-arch
-description: 给 Picking App（com.picking）新增或排查后端接口、遇到 90008/Token is Invalid、配置认证或路由时使用。触发词：Picking App, picking, com.picking, @VestaIgnore, Vesta, 90008, Token is Invalid, site_code, orderPick, 工牌登录
+description: 给 Picking App（com.picking）新增或排查后端接口、遇到 90008/Token is Invalid、配置认证或路由时使用。触发词：Picking App, picking, com.picking, @VestaIgnore, Vesta, 90008, Token is Invalid, site_code, orderPick, 工牌登录, scan-totes, bindToteNumber, 绑 Tote, PA-CHK, eslint CRLF
 ---
 # Picking App 架构约束（自动加载）
 
@@ -82,6 +82,30 @@ Central-api 网关对不同路径有不同的认证策略。Picking App 调用�
 | Consolidation（新） | `wms/orderPick/` | `wms/orderPick/bindZoneCartToSlot` |
 
 **原则**：不要给 picking app 新接口用 WMS App 专属的路径，容易因认证体系差异导致问题。
+
+---
+
+## 规则5：`scan-totes.tsx` 绑 Tote 成功分支依赖「原地改订单对象」（OP-40026 实现时发现）
+
+`bindToteNumber` 成功后先 `setPickingData(() => { updatedOrders[i].tote_no = tote_no; ... })`，绑完（`isBindToteFinish == 1`）时再用**本次闭包里的** `pickingData` 组装 `data` 写缓存。`updatedOrders` 只是数组浅拷贝，`tote_no` 是直接改在共享的订单对象上，所以闭包里的 `pickingData.picking_order` 也带上了最后一个刚绑的 Tote。
+
+- 改这段时不要换成 `map(o => ({...o, tote_no}))` 这种不可变写法：缓存会丢掉最后一个 Tote，`scan-tote.tsx` 按 order_no 找目标 Tote 时这些订单取到空串，拣货员每扫一次都报 `WRONG Tote!`。
+- 未绑完时这里不写缓存，续拣靠后端 `createPickingTask` 返回的 `bindToteIndex` 与已绑 `tote_no` 恢复。
+
+## 规则6：本机跑 eslint 时先剔除 CRLF 噪音再对比
+
+central-picking-app 仓库里文件是 LF，本机 `core.autocrlf=true` 检出为 CRLF，`prettier/prettier` 会对每一行报 ``Delete `␍` ``（单个文件几百条）。PA-CHK「不新增错误与警告」要用 `-f json -o <文件>` 输出，去掉 message 恰为 ``Delete `␍` `` 的条目后按规则与消息对比；提交后 `git ls-files --eol` 应仍是 `i/lf`。
+
+## 规则7：没有真机也能在模拟器上走 App 内 mock（OP-40026 二轮验证时打通）
+
+「本机没有设备」不是跳过 App 内走查的理由：`D:\ADT\Android\android-sdk-windows\emulator\emulator.exe -list-avds` 有 `Pixel`（API 26 x86）与 `Medium_Phone_API_36.0`。
+
+- **装包**：`android\app\build\outputs\apk\debug\app-debug.apk` 含 x86 库、不内置 bundle；没有原生改动时直接 `adb install -r` 复用，JS 从 Metro 取。Metro 用 `npx react-native start --reset-cache`（工具会拦带 `--port` 的命令）+ `adb reverse tcp:8081 tcp:8081`。
+- **扫码**：`BarcodeScannerModule` 监听广播 `android.intent.ACTION_DECODE_DATA`、读 extra `barcode_string`，所以 `adb shell am broadcast -a android.intent.ACTION_DECODE_DATA --es barcode_string <条码>` 就等于扫一次，工卡、车、库位、Tote、`OOS`、`COMPLETE` 都能这样扫。
+- **不打生产**：`instance.ts` 默认 baseURL 是生产，mock 的 adapter 对未列出的接口必须直接失败，不能回落真实请求；模拟器再开飞行模式断外网（Pixel 是 production 镜像，`adb root`、`svc wifi disable` 都无效，只能在设置页点开关）。走完 `adb shell pm clear com.picking` 清掉本地缓存与未发出的 Firebase 事件。
+- **断网后连 Metro**：App 默认连 `10.0.2.2:8081`，飞行模式下不通。debug 包可 `run-as`：把含 `<string name="debug_http_host">localhost:8081</string>` 的 `com.picking_preferences.xml` 推到 `/data/local/tmp` 再 `adb shell run-as com.picking cp … shared_prefs/`，重启 App 即走 adb reverse。
+- **看缓存**：`adb shell "run-as com.picking cat databases/RKStorage > /data/local/tmp/rk.db"` 后 pull，用 Python sqlite3 读 `catalystLocalStorage` 表的 `pickingData` / `routeName`，可以直接核对绑 Tote 后缓存里每单的 `tote_no`、`floor`（规则 5 的缓存问题就靠这个看）。
+- **截图**：`adb shell screencap -p /sdcard/s.png` + `adb pull`（不要 `exec-out >`）；截到全黑先 `input keyevent KEYCODE_WAKEUP`、`svc power stayon true`。
 
 ---
 

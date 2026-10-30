@@ -500,6 +500,17 @@ WHERE im.item_number = ?;
 
 ---
 
+## 十三、调拨装车表（wh_transship_truck / wh_transship_truck_out_pallet）
+
+调拨（Transship）与 Zone Picking 一期跨 Zone 上车共用这两张表，识别或回填某一类行时注意（2026-10，OP-40026 第 3 轮审查实查）：
+
+- `wh_transship_truck_out_pallet` **没有 warehouse_number 列**（`TSTruckMapper.insertOutPallet` 只写 manifest、location_no、seal_no、in_user、in_dtm、status），按仓库筛只能靠 location_no 关联到该仓的库位或车，或经 manifest / seal_no 关联 `wh_transship_truck.warehouse_number`。
+- 调拨托盘行的 **manifest 可能为空**：`TSTruckService.createTruckRecord` 只在 seal_no 为空时生成 manifest，按 seal_no 建车的旧流程，`loadPallet2Truck` 写入的托盘行 manifest 为空；调拨查询因此用 `ttpo.manifest = tt.manifest OR ttpo.seal_no = tt.seal_no` 关联车次。
+- 一期 Zone 上车写入的行 manifest 也为空，location_no 是 Zone 2 Tote 或 Cart 号（无 Tote 的车以 Cart 号占位）。所以「manifest 为空」不能单独作为「Zone 行」的判据，必须再限定 location_no 属于该仓 Zone 2 的 Tote（location_type = 6、zone_id = 2）或 Zone 2 车（`wh_picking_cart.zone_id = 2`）。
+- status：0 = 未下车 / 未收货，1 = 已下车 / 已收货。
+
+---
+
 ## 时间字段说明
 
 所有时间字段均为 Unix 时间戳（秒），查询时使用 `FROM_UNIXTIME()` 转换：

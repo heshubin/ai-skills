@@ -182,6 +182,7 @@ const styles = StyleSheet.create({
 - 请求超时设置为 15-30 秒（仓库网络可能慢）
 - 关键操作（提交收货、确认拣货）失败后提供重试机制
 - 显示加载状态，避免用户重复点击
+- 后端幂等接口返回「已有结果」（如 `reused = true`、`resumed = true`、`already unloaded`）时，App 拿到它的主要场景是首次请求已提交、响应超时丢失后的重试：首次成功时该做的副作用（自动打印标签、推进步骤、更新进度）这时一次都没发生。处理这类分支时要么补做副作用，要么明确提示用户去补打 / 刷新，不能静默当成功（OP-40026 WMS App 审查：Finish loading `reused` 不打印也不提示，Manifest 一张没打、L5 却显示 `Manifest applied`）
 
 ```tsx
 // 防重复提交
