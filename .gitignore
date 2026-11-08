@@ -13,3 +13,5 @@ mcp.json
 __pycache__/
 *.pyc
 node_modules/
+# 自动提交的一次性说明（由 agent 写入，提交后由 hook 删除）
+.commit-note.md

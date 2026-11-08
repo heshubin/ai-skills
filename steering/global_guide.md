@@ -29,4 +29,8 @@ inclusion: always
     - 提交信息为「更新技能：<改动项>」；
     - 只要有一处疑似密钥就整批不提交；
     - 日志位于 `D:\code\kiroWP\docs\tmp\kiro-knowledge-autocommit.log`。
-    所以写完不用手动提交，但内容里禁止出现 token、密码、私钥。不在 kiroWP 工作区时，hook 不会触发，写完要手动执行 `powershell -NoProfile -ExecutionPolicy Bypass -File d:/code/kiroWP/docs/scripts/kiro-knowledge-autocommit.ps1`。
+    所以写完不用手动提交，但内容里禁止出现 token、密码、私钥。
+    **写清楚改了什么**：改完知识库后，在仓库根目录写一个 `.commit-note.md`（已加入 gitignore，提交后由 hook 自动删除）：
+    - 第一行写一句话，说清这次调整了什么、为什么调整，hook 会把它作为提交标题。例如：`worktree-junction-safety 补充 hook 机械拦截与回归方法，防止删 worktree 误删主仓 node_modules`。
+    - 后面几行可以补充细节，会写进提交正文。
+    - 不写这个文件也能提交，hook 会按 diff 自动生成摘要：新文件取 description，修改的文件取新增或改动的章节标题。不过自动摘要只能列出改了哪些章节，说不清为什么改，所以建议都写这个文件。不在 kiroWP 工作区时，hook 不会触发，写完要手动执行 `powershell -NoProfile -ExecutionPolicy Bypass -File d:/code/kiroWP/docs/scripts/kiro-knowledge-autocommit.ps1`。
