@@ -44,3 +44,14 @@ Get-ChildItem <worktree> -Recurse -Depth 2 -Directory -Force | Where-Object { $_
   2. 跑用例：用例在 `d:/code/kiroWP/docs/scripts/guard-junction-delete.cases.json`，共 7 条。把每条的 command 包成 `{tool_name, tool_input:{command}}`，通过管道传给脚本，核对 exit code 是否和 expect 一致。命令要从文件里读，不能直接写进命令行，不然当前会话的 hook 会把测试命令本身拦下来。
   3. 确认 canary 没被删。
   4. 收尾：先 `cmd /c rmdir` 拆掉联接，再删除沙箱。
+
+## 推送后把主目录同步到远端（2026-11-08 加）
+在 worktree 里改代码，再 `git push origin <临时分支>:<目标分支>` 推上去，远端会前进，但主目录（例如 `D:\code\wms-cloud-service`）的本地分支不会跟着动。主人打开主目录看不到新代码，要自己 `git pull`，容易误以为改动丢了。
+
+每次推送、删除 worktree 之后，都要同步主目录：
+1. 只在主目录**当前分支就是推送的目标分支**、并且**没有未提交的已跟踪改动**时执行：`git -C <主目录> merge --ff-only origin/<目标分支>`。
+2. 主目录在别的分支上，或者有未提交改动时，不要去动主目录，在报告里写明「主目录落后 N 个提交，请自行 pull」。
+3. 禁止用 `reset`、`checkout -f`、`stash` 这类会动到主人工作区的手段来强行同步。
+
+## npm install 会改 yarn.lock
+在同时有 package-lock.json 和 yarn.lock 的仓库里跑 `npm install`（npm 7 及以上），npm 会顺手改写 yarn.lock。只撤销 package-lock 是不够的。装完要 `git status` 检查，**两个 lock 文件都要撤销**：`git checkout -- package-lock.json yarn.lock`。2026-11-08 给 central-picking-app 补依赖时，就漏撤了 yarn.lock，多出 545 行改动。
