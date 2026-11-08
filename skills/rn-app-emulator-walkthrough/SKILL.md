@@ -181,6 +181,9 @@ AdbT @('-s','emulator-6200','shell','getprop','sys.boot_completed')
 - Picking App 的 Group 车 mock：`createPickingTask` 返回的 `picking_order` 要带 `tote_no`（Group 的 Tote 由后端预绑），否则 ScanOos / ScanTote 上的 Tote 号是空的（10846 实测）。
 - PowerShell 里 `git show <rev>:<file> | npx eslint --stdin` 会把内容按 CRLF 重新拼接，报满屏 `Delete ␍`；要按原始字节检查就用 `cmd /c "git show ... | npx eslint --stdin --stdin-filename <file>"`，前后对比 eslint 数字才可信（10846 实测）。
 - 模拟器没有可用相机时，走查拍照功能可以临时把 `launchCamera` 换成返回固定 asset（`file:///sdcard/xxx.jpg`），mock adapter 按调用次数轮换几种响应，一次走查覆盖多个分支（10816 实测）。
+- 测「跳页空档里的扫码」时，两条广播间隔太短或撞上页面切换，JS 可能收不到（原生日志有 `Barcode received`，JS 没有 `Received barcode content`）；要以设备 logcat 的时间戳为准判断那次扫码落在哪个页面，必要时重试（10846 B37 实测：拣够后约 100 ms 发 Tote，JS 在 release 之后 1.2 s 才处理，正好落在空档里）。
+- 连续广播每步只隔 3 秒时，ScanTote → ScanBin 偶尔读到旧的 locationIndex（报 `WRONG BIN` 但 Expected 是上一行），属于存储写入时序，不是业务改动引起；换行后先截图确认页面再扫。
+- 后台起 Metro 用的 `cmd /c "cd /d <worktree> && ..."`，停 Metro 后目录句柄可能还被占着：`git worktree remove` 会卡在 `Deletion of directory ... failed. Should I try again? (y/n)` 等输入，Kiro 终端直到超时。遇到时结束 git 进程，`git worktree prune` 清记录，剩下的空目录等句柄释放后再删（先确认里面已经没有联接）。
 
 ## 相关
 
