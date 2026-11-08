@@ -178,6 +178,8 @@ AdbT @('-s','emulator-6200','shell','getprop','sys.boot_completed')
 
 - worktree 里 `node_modules` 用目录联接时，顶栏默认返回箭头的 PNG 显示不出来；真机正式包正常。
 - 删除带目录联接的 worktree 前，先用 `cmd /c rmdir <联接>` 删联接本身，否则可能顺着联接删掉主目录的 `node_modules`；PowerShell 5.1 的 `Remove-Item -Recurse` 不要用在联接上。删完用 `(Get-Item <路径> -Force).LinkType` 确认联接已不存在，再 `git worktree remove`，禁止加 `--force`（11/05 `git worktree remove --force` 顺着联接删掉了主目录的 `.bin`、`@babel`、`@eslint` 等，eslint 和 Metro 全部起不来，只能在主仓库 `npm install --no-audit --no-fund` 补齐后撤销 package-lock 改动）。
+- Picking App 的 Group 车 mock：`createPickingTask` 返回的 `picking_order` 要带 `tote_no`（Group 的 Tote 由后端预绑），否则 ScanOos / ScanTote 上的 Tote 号是空的（10846 实测）。
+- PowerShell 里 `git show <rev>:<file> | npx eslint --stdin` 会把内容按 CRLF 重新拼接，报满屏 `Delete ␍`；要按原始字节检查就用 `cmd /c "git show ... | npx eslint --stdin --stdin-filename <file>"`，前后对比 eslint 数字才可信（10846 实测）。
 - 模拟器没有可用相机时，走查拍照功能可以临时把 `launchCamera` 换成返回固定 asset（`file:///sdcard/xxx.jpg`），mock adapter 按调用次数轮换几种响应，一次走查覆盖多个分支（10816 实测）。
 
 ## 相关

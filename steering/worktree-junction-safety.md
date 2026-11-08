@@ -38,4 +38,9 @@ Get-ChildItem <worktree> -Recurse -Depth 2 -Directory -Force | Where-Object { $_
 - 发现联接就以 exit 2 拦下命令，提示先用 `cmd /c rmdir` 拆掉联接。
 - 递归删除的目标本身就是联接时，也会拦下。
 - 脚本自身出错时直接放行，不影响正常工作。
-- hook 从下一个会话开始生效。修改脚本后，用沙箱 `docs/tmp/_guard_wt`（里面放一个假联接，指向 `docs/tmp/_guard_target`）跑 7 个用例回归，确认 canary 文件没被删。
+- hook 从下一个会话开始生效。workflow 的每个步骤都是新会话，会自动加载。
+- 修改脚本后要做回归：
+  1. 建沙箱：在 `docs/tmp/_guard_wt/app/wms-rn/node_modules` 用 `mklink /J` 建一个联接，指向 `docs/tmp/_guard_target`。目标目录里放一个 `canary.txt`，另外建一个空目录 `docs/tmp/_guard_wt/plain`。
+  2. 跑用例：用例在 `d:/code/kiroWP/docs/scripts/guard-junction-delete.cases.json`，共 7 条。把每条的 command 包成 `{tool_name, tool_input:{command}}`，通过管道传给脚本，核对 exit code 是否和 expect 一致。命令要从文件里读，不能直接写进命令行，不然当前会话的 hook 会把测试命令本身拦下来。
+  3. 确认 canary 没被删。
+  4. 收尾：先 `cmd /c rmdir` 拆掉联接，再删除沙箱。
