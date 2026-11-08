@@ -25,3 +25,8 @@ inclusion: always
     - 共用方法的隐藏副作用（如：新流程改变了旧校验的前置状态）
     沉淀位置：通用/WMS 业务知识 → `D:\code\kiro-knowledge\steering\` 或 `D:\code\kiro-knowledge\skills\`（全局经验库）；只对单个项目有效的知识 → 该项目工作区 `.kiro/steering/` 或 `.kiro/skills/`；通用思维方法 → `global_guide.md` 或 `superpowers.md`
     **禁止**：发现了关键知识点但只用于当次判断，不沉淀，等用户追问才补上。
+    **提交**：`D:\code\kiro-knowledge` 是一个 git 仓库（origin 为 heshubin/ai-skills，分支 master）。写进 skills、steering、templates 的内容，在 kiroWP 工作区由 Stop hook `kiro-knowledge-autocommit` 在每轮回复结束时自动提交并推送：
+    - 提交信息为「更新技能：<改动项>」；
+    - 只要有一处疑似密钥就整批不提交；
+    - 日志位于 `D:\code\kiroWP\docs\tmp\kiro-knowledge-autocommit.log`。
+    所以写完不用手动提交，但内容里禁止出现 token、密码、私钥。不在 kiroWP 工作区时，hook 不会触发，写完要手动执行 `powershell -NoProfile -ExecutionPolicy Bypass -File d:/code/kiroWP/docs/scripts/kiro-knowledge-autocommit.ps1`。
