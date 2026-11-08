@@ -70,7 +70,7 @@ kiro-knowledge\
 | op-create-template.md | WMS | auto | tech-team OP 创建模板（API key 走环境变量） |
 | android-app-testing.md | WMS | auto | WMS/Picking App 打包、Metro、logcat、Appium 登录 SOP |
 
-## Skill 索引（24 个）
+## Skill 索引（25 个）
 
 | skill | 层级 | inclusion | 一句话用途 |
 |---|---|---|---|
@@ -98,6 +98,7 @@ kiro-knowledge\
 | wms-app-login | WMS | skill | Appium 自动登录 WMS App（账号/密码/设备号走环境变量） |
 | pd-meeting-doc | WMS | skill | PD 双周例会文档（OpenProject key 走环境变量） |
 | wms-batch-priority-guide | WMS | skill | batch_priority 三层来源（自动 / 订单优先级 / Central ↑）、生产几百万值的读法、选批排序坑、二期分层排序方案（来自 OP-40026 调研） |
+| wms-picking-task-rollback | WMS | skill | 撤销误领的拣货任务：普通 / 单 Zone / 跨 Zone 场景判断，领取写入表清单，带状态守卫和期望行数的生产脚本（跨 Zone 退回待领取，不删 Task） |
 
 skill 需要的环境变量：`WMS_APP_USER`、`WMS_APP_PASSWORD`、`WMS_DEVICE_UDID`、可选的 `WMS_SCREENSHOT_DIR`（wms-app-login，不设时截图写到当前目录下的 `docs\tmp\wms_test`）、`OPENPROJECT_API_KEY`（pd-meeting-doc、op-create-template）、`ELASTICSEARCH_AUTHORIZATION` / `KIBANA_AUTHORIZATION`（api-traffic-surge）。真值通过 yami-skills 的 account-password-query 获取，用户级环境变量设置一次即可。
 

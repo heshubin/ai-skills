@@ -192,3 +192,19 @@ sorting 时只有 Zone1 数量，全部确认后误判为完成，提前提示 C
    → 数据被人工中途修改，代码没问题
 ```
 详见 steering：data-anomaly-audit-first.md
+
+---
+
+## 读取禅道 Bug 截图（2026-11，OP-40026 改 bug 时踩到）
+
+禅道 Bug 的截图常常带着文字里没写的信息（红框位置、实际数值、弹窗文案、测试用的 Seal/Slot 号），必须逐张看完再下结论。
+
+- zentao MCP 读不到 Bug 图片：`zentao_download_attachment` 只支持需求（story），对 Bug 的图片返回 HTTP 400。Bug 正文里的图片是 `file-read-<id>.png` 链接。
+- 可用的办法：请主人先在 Playwright 浏览器里登录禅道，然后逐张执行：
+  1. `browser_navigate` 打开 `https://bugs.yamibuy.tech/file-read-<id>.png`
+  2. `browser_take_screenshot`（scale=device、fullPage=true、filename 放 `docs/tmp/<需求>-bugs/<bug号>-<id>.png`）
+  3. `read_file` 打开这个 png 查看
+- 截图刚保存时立刻 `read_file` 偶尔报 ENOENT，再读一次即可。
+- 看图时把图里的业务单号（Seal、Slot、Tote、Batch、picking_task_id）记进分析，它们是查 gqc 数据、对日志的入口；同一个 Bug 的多张图可能来自不同次操作（单号不同），不要混成一次。
+- 测试会在分析之后补图、改正文（OP-40026 Bug#10804：分析时「无截图」，之后补了图 14827，晚上又把期望改成「扫车，扫商品，扫 zone1 Tote」）。实现和推送前各 `zentao_get_bug` 一次，看 `actions` 里 `edited` 的 `history`（steps 的 diff）与 `lastEditedDate`；有新图就补看，期望变了就对照方案，冲突时先问再改。
+- 写 report 的 gqc 回归步骤前，重查一次分析时用的样例单（OP-40026 Bug#10804：分析 14:38 时订单 1241111428 / 1241111430 就绪未合单，14:40 已被同事提前结束合单，晚上写报告时已不能用）。gqc 有多人同时测，样例单几小时内就会被用掉；回归步骤里给「找单 SQL + 条件」，不要只写具体单号，正在被别人分拣的单要标出来，提醒测试先协调。

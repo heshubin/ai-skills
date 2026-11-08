@@ -95,6 +95,8 @@ Central-api 网关对不同路径有不同的认证策略。Picking App 调用�
 ## 规则6：本机跑 eslint 时先剔除 CRLF 噪音再对比
 
 central-picking-app 仓库里文件是 LF，本机 `core.autocrlf=true` 检出为 CRLF，`prettier/prettier` 会对每一行报 ``Delete `␍` ``（单个文件几百条）。PA-CHK「不新增错误与警告」要用 `-f json -o <文件>` 输出，去掉 message 恰为 ``Delete `␍` `` 的条目后按规则与消息对比；提交后 `git ls-files --eol` 应仍是 `i/lf`。
+- 汇总 json 时别用 PowerShell 5.1 的 `ConvertFrom-Json`（中文消息会解析失败），也别用 `node -e "…"`（PS 5.1 会吃掉参数里的双引号和反引号）。用 here-string 经标准输入喂给 node：`$code = @'…'@; $code | node - <json文件>`；脚本里的非 ASCII 字符（`␍`、`·`）写成 `\u240d`、`\u00b7`，否则经管道后变成 `?`。
+- DownloadManager.tsx、footer.tsx 这类老文件整体不符合 prettier（缩进 4/8 空格、双引号）。在其中缩进不对的代码块里新增一行，按邻行缩进写，prettier 也会多报 1 条缩进 error；新增 import 写成 prettier 格式（`{x}`、单引号）可以不新增。新增行尽量少，并在提交信息里说明多出的那条是缩进。
 
 ## 规则7：没有真机也能在模拟器上走 App 内 mock（OP-40026 二轮验证时打通）
 
@@ -106,6 +108,21 @@ central-picking-app 仓库里文件是 LF，本机 `core.autocrlf=true` 检出�
 - **断网后连 Metro**：App 默认连 `10.0.2.2:8081`，飞行模式下不通。debug 包可 `run-as`：把含 `<string name="debug_http_host">localhost:8081</string>` 的 `com.picking_preferences.xml` 推到 `/data/local/tmp` 再 `adb shell run-as com.picking cp … shared_prefs/`，重启 App 即走 adb reverse。
 - **看缓存**：`adb shell "run-as com.picking cat databases/RKStorage > /data/local/tmp/rk.db"` 后 pull，用 Python sqlite3 读 `catalystLocalStorage` 表的 `pickingData` / `routeName`，可以直接核对绑 Tote 后缓存里每单的 `tote_no`、`floor`（规则 5 的缓存问题就靠这个看）。
 - **截图**：`adb shell screencap -p /sdcard/s.png` + `adb pull`（不要 `exec-out >`）；截到全黑先 `input keyevent KEYCODE_WAKEUP`、`svc power stayon true`。
+- **在 worktree 里跑 Metro**（Bug#10801 走查）：worktree 的 `node_modules` 是目录联接，Metro 解析不到，临时在 `metro.config.js` 加 `watchFolders` 与 `resolver.nodeModulesPaths` 指向 `D:/code/central-picking-app/node_modules`，走完和 instance.ts 一起 `git checkout --`。
+- **收尾顺序**（11/03–11/04 adb 服务卡死三次，都在 Metro 停掉之后）：先 `am force-stop com.picking`，再 `reverse --remove-all`，最后停 Metro。App 经 reverse 不停重连已关的 8081，会把 adb 拖死。
+
+## 规则8：ScanOos 等扫码页没有滚动，页面加内容前先算高度（Bug#10801）
+
+ScanOos 是 `VStack` 直接排版，底栏 `Footer` 是 `position: absolute` 盖在底部，页面没有 ScrollView。`Bin` 的 `position="center"` 版本约 190dp 高。10801 第一版在大号库位下面加「Picked qty」卡片，在 1080×1920（420dpi，可用高度约 660dp）的模拟器上，调到上限时最后一行提示 `Place 2 in … and scan the tote` 被底栏盖住。改法：有卡片时库位用 `Bin position="left"` 的紧凑版本（同 ScanUpc / ScanTote 顶部），上限提示放到卡片标题同一行，不单独占一行。往扫码页加内容时，按 dp 估一遍高度，用模拟器截图确认最长的状态（上限、报错提示条同时出现）没有被底栏挡住。
+
+## 规则9：版本号与导航包装（OP-40026 App 版本标识分析时发现）
+
+- 版本检查接口已有：`wms/app/getAppVersion/picking/000`（`apiUrl.getPickingVersionUrl`），`DownloadManager.tsx` 启动时调一次；它的 catch 分支把 serverVersion 设成本机版本返回，复用结果时只能在 try 成功分支取值，否则网络失败会被当成「已是最新」。
+- `android/app/build.gradle` 的 versionCode 固定为 1，`DeviceInfo.getBuildNumber()` 区分不了包，判断版本只能用 versionName。
+- `app-navigator.tsx` 的 `AppNavigator` 调了 `useZone()`，选 Zone 时会重渲染。给页面套 HOC（如加底部条）必须在模块顶层生成包装组件，不能在 JSX 里 `component={withX(Page)}`，否则每次重渲染页面都会重挂载、丢状态。
+- `AndroidManifest.xml` 没有 `VIBRATE` 权限：JS 里调 RN `Vibration` 没有效果或报 SecurityException，加权限要重打原生包。需要「轻振一次」的交互先按「没有现成能力」处理。
+- 扫码事件是 `BarcodeScanner` 原生模块的 `barcodeScan`，多个监听会同时收到。弹层（RN `Modal`）不改变页面 focus，弹层打开时下面页面的扫码处理照常执行；想让弹层不挡视线，就在弹层里用 `useBarcodeScanner().addBarcodeListener` 收到扫码时关闭自己（版本详情卡就是这样做的）。
+- 长按类交互在模拟器上用 `adb shell input swipe x y x y <毫秒>` 模拟；想拍「按住中途」的图，在同一条 adb shell 里写 `input swipe … & sleep 1.9; screencap -p …; wait`，只占一条 adb 命令。连续多条 `input` 时偶尔会打印 `Killed`（`input` 进程被杀，按下事件没有抬起），出现后那一组结果不可信，单独重测。
 
 ---
 

@@ -242,6 +242,28 @@ ORDER BY total_qty DESC;
 
 ---
 
+### 手工改 goods_number 前必读：各环节读的是哪份数量（2026-11-07 核查）
+
+down 单后用脚本改 `wh_order_goods.goods_number`（如价格配错只发 1 件），WMS 各环节的数量来源：
+
+| 环节 | 数量来源 | 改后效果 |
+|---|---|---|
+| 预占 `PreoccupancyService.getPreoccupanySellableInfo` | `wh_order_goods`（按 item SUM，合并赠品） | 按新数量判断 bin 够不够 |
+| 组批 goods_seq_info / 拣货 `item_quantity` | `wh_preoccupancy_log.qty`（action=1） | 跟随预占数量 |
+| 打包台显示 | `wh_picking_order_item` 实拣数 | 跟随拣货 |
+| 出库缺发 `dealOOSPack`（central-packing） | `goods_number - 实拣数` > 0 才调 RMA `oosShiping` 退款 | 改小后**不会**对差额触发缺发退款 |
+| 出库 `so_outStock` MQ 的 oos_list | 同上 | 差额不进 oos_list |
+| 回写 `send_number` + 通知 SO | 实拣数 | SO 收到发 1 件 |
+| 预分配 shipping method 重量（wms-cloud `listOrderGoodsWeightLb`） | **`yamibuy_master.xysc_order_goods`** | 仍按原数量算重，可能只剩 UPS/USPS 等重货 method |
+| 打包生成面单重量（central-packing `listOrderGoodsWeightLb`） | `wh_order_goods` | 按新数量 |
+| 发货邮件 `queryShippingMailInfo` | **`yamibuy_master.xysc_order_goods`** | 邮件仍显示原数量 |
+
+要点：
+- 必须在预占成功前改（`wh_order_pool.status=-5` 且 `batch_id=0`）。预占成功后再改，拣货仍按预占数量出库。
+- 已出库（`order_status=5`、`send_number>0`）的订单不要改。
+- WMS 代码里没有任何地方回写 `goods_number`（只有 down 单 insert），SO 的 hold/release MQ 也不重刷商品明细。
+- 差额的退款、前台库存释放不会由 WMS 触发，需要 SO/客服侧处理。
+
 ## 三、订单池表 (wh_order_pool)
 
 ### 表说明
@@ -393,6 +415,10 @@ WHERE (qty - allocated_qty - unsellable_qty) < safety_qty AND safety_qty > 0;
 | warehouse_number | 仓库编号 |
 
 ---
+
+### 撤销误领的拣货任务
+
+领取时写了哪些表、普通 / 单 Zone / 跨 Zone 三种场景的撤销脚本，见 skill `wms-picking-task-rollback`（`D:\code\kiro-knowledge\skills\wms-picking-task-rollback\SKILL.md`）。
 
 ## 九、打包表
 

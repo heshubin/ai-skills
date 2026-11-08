@@ -25,9 +25,12 @@ Promise Delivery (PD) 团队每两周开一次例会，需要将本期工作进�
 只写这5个人的工单，其他人不写：
 - william he（ID: 15）— Zone Picking, EXDD, 保质期
 - aiden duan（ID: 36）— WMS App
-- chris li — Packing, 物流
+- chris li（ID: 56）— Packing, 物流
 - Jun Qu（ID: 469）— BPM, 盘点, RMA
 - nikki ma（ID: 75）— QA 测试
+
+> 5 人 ID 速查：`15, 36, 56, 469, 75`（2026-11-04 已全部核实）。
+> 查某人 ID：`GET /api/v3/principals?filters=[{"name":{"operator":"~","values":["chris"]}}]`
 
 ---
 
@@ -71,10 +74,50 @@ foreach ($uid in $memberIds) {
 }
 ```
 
+**方法 C（2026-11-04 实战验证，最可靠）：Playwright 借用浏览器登录会话查 OP API**
+
+当 mcp.json 里的 OP API key 失效（curl 返回 401）、或 openproject MCP 连不上时，用这个方法——借用户 Chrome 里已登录的 OP 会话，一次查询就带上「本期更新时间 + 5 人」双过滤，直接拿到全部工单：
+
+```
+# 1. 列出标签页，别打断用户正在用的页面
+mcp_playwright_browser_tabs(action="list")
+# 2. 新开标签页到 OP 看板（让会话 cookie 生效）
+mcp_playwright_browser_tabs(action="new", url="https://openproject.yamibuy.net/projects/tech-team/work_packages?query_id=82")
+# 3. 在页面内 fetch，带 credentials:'include' 用登录态；输出大，写文件
+mcp_playwright_browser_evaluate(
+  filename="docs/tmp/op-pd-period.json",
+  function="""async () => {
+    const filters = encodeURIComponent(JSON.stringify([
+      {updatedAt:{operator:'<>d',values:['{起始}T00:00:00Z','{结束}T23:59:59Z']}},
+      {assigneeOrGroup:{operator:'=',values:['15','36','56','469','75']}}
+    ]));
+    const url = 'https://openproject.yamibuy.net/api/v3/work_packages?pageSize=200&filters=' + filters;
+    const r = await fetch(url, { headers:{Accept:'application/json'}, credentials:'include' });
+    const j = await r.json();
+    const els = (j._embedded && j._embedded.elements) || [];
+    const items = els.map(e=>({id:e.id, subject:e.subject,
+      assignee:e._links&&e._links.assignee&&e._links.assignee.title,
+      status:e._links&&e._links.status&&e._links.status.title,
+      updatedAt:e.updatedAt, startDate:e.startDate, dueDate:e.dueDate}));
+    return JSON.stringify({total:j.total, count:j.count, items}, null, 2);
+  }"""
+)
+```
+
+坑：
+- 跨域会被拦。fetch 必须在 **openproject.yamibuy.net 这个源的页面里**执行（所以要先 new 一个 OP 标签页）。在别的站点页面里 fetch OP API 会 `TypeError: Failed to fetch`。
+- `assigneeOrGroup` + `values:['15',...]` 一次过滤 5 人，比逐人查快得多，`<>d` 是日期区间算子。
+
 **重要限制**：
-- query_id=82 是全公司 Operations Channel，不只是 PD 小组，不要拉全量
+- query_id=82 是全公司 Operations Channel，不只是 PD 小组，**total 有两万多条，绝不能拉全量**，必须用上面的双过滤
 - 只写 **本期有 Launched Date 或 updatedAt 在周期内** 的工单
 - 不要写 New 状态（没开始做的）
+
+### 步骤 1.5: 确认本期周期
+
+- 周期起点 = 上一期的「终点日」次日。读正式文档顶部最新一期标题（`get_doc_as_markdown` 或 `get_doc_content`），拿到上期区间，接着往后排。
+- 2026-10-14 那期是 9/17~10/14；本次就是 10/15~11/04。
+- 周期终点以用户在 OP 看板上设置的 updatedAt 过滤区间为准（用户会直接告诉你，如「2026-10-15 - 2026-11-04」）。
 
 ### 步骤 2: 撰写内容
 
@@ -139,67 +182,82 @@ foreach ($uid in $memberIds) {
 - [ ] {待办事项}
 ```
 
-### 步骤 3: 写入模板文档（暂存）
+### 步骤 3: 选对 Google Docs 工具链（重要，2026-11-04 更新）
 
-使用 `mcp_google_docs_replaceDocumentWithMarkdown` 写入**模板文档**：
-- documentId: `10zY9LPzQpqYfUWx3hLAKhC0RonJeJBrrrVRkbTe0PHQ`
-- `firstHeadingAsTitle: true`（第一行 `#` 渲染为 Title 大标题）
+本任务有两套 Google MCP，**优先用 `google_workspace`**：
+
+| MCP | 状态 | 说明 |
+|-----|------|------|
+| `google_workspace`（工具前缀 `mcp_google_workspace_*`） | ✅ 可用 | OAuth 弹窗授权，账号 `william.he@yamibuy.com`。首次用会弹授权链接，让用户完成后重试。**所有调用都要带 `user_google_email`** |
+| `google-docs`（工具前缀 `mcp_google_docs_*`） | ❌ 常失效 | token 过期后直接返回 `invalid_grant (400)`，且不给重新授权入口，自己修不了。别依赖它 |
+
+> 「MCP 面板显示已连接」≠「能调 API」。连接指进程管道通，但背后的 OAuth token 可能过期。判断依据永远是「实际调一次 API 看返回」，不是面板颜色。
+
+**不走模板中转，直接写正式文档。** 正式文档 `18DKShNRlfo3GetfKisauUuyHF7MRaUOwCSL0FMeZJjM`，最新一期在最顶部。
+
+### 步骤 4: 写入正式文档（google_workspace，三步法，已验证）
 
 ```
-mcp_google_docs_replaceDocumentWithMarkdown(
-  documentId="10zY9LPzQpqYfUWx3hLAKhC0RonJeJBrrrVRkbTe0PHQ",
-  markdown="{上面的模板内容}",
-  firstHeadingAsTitle=True
+# 4.1 在文档最顶部（index=1）插入本期标题行（结尾带 \n）
+mcp_google_workspace_modify_doc_text(
+  user_google_email="william.he@yamibuy.com",
+  document_id="18DKShNRlfo3GetfKisauUuyHF7MRaUOwCSL0FMeZJjM",
+  start_index=1,
+  text="2026年11月4日 | PD例会(2026年10月15日~2026年11月4日  21天)\n"
+)
+
+# 4.2 把标题行设为 Heading 1（end_index=标题文本长度+1）
+mcp_google_workspace_update_paragraph_style(
+  user_google_email="william.he@yamibuy.com",
+  document_id="18DKShN...",
+  start_index=1, end_index=47,
+  named_style_type="HEADING_1"
+)
+
+# 4.3 用 heading 模式把本期正文（Markdown）填到标题下方
+#     heading 传刚插入的完整标题文本，工具自动定位到该节并替换/追加
+mcp_google_workspace_modify_doc_text(
+  user_google_email="william.he@yamibuy.com",
+  document_id="18DKShN...",
+  heading="2026年11月4日 | PD例会(2026年10月15日~2026年11月4日  21天)",
+  heading_level=1,
+  text="{本期正文 markdown}"
 )
 ```
 
-**已验证的格式效果**（2026-08-27）：
-- `#` 标题 → Title 大字体
-- `参加者:` → Normal text 小字
-- `---` → 分隔线
-- `## 各方向更新` → Heading 2（⚠️ 会出现在大纲里，见步骤4修复）
-- `- **ICQA**` → bullet list，加粗正确
-- `  - 子项` → 二级 bullet
+- 返回 `Replaced section under heading ...` = 干净替换（无重复）；`Appended to section ...` = 追加。重跑 4.3 修内容是安全的（它替换整节，不会叠加）。
+- 每次写完 `get_doc_content(tab_id="")` 读回，确认：① 本期在最顶部 ② 上一期内容完好 ③ 无重复。
 
-### 步骤 4: 修复大纲（节标题降为 Normal text）
+### 步骤 5: ⚠️ 嵌套列表会被拍平（本次最大的坑）
 
-`replaceDocumentWithMarkdown` 会把所有 `##` 都变成 Heading 2，出现在文档大纲。
-需要把节标题改回 Normal text，只保留时间标题：
+`modify_doc_text` 的 heading 模式 Markdown 渲染器 **不支持多级列表嵌套**：无论用 2 空格还是 4 空格缩进，所有 `- ` bullet 都会被拍平成同一层级，父子关系丢失。
 
-```python
-# 需要改为 Normal text 的段落（用 findText 定位）
-节标题列表 = [
-    "各方向更新",
-    "1. 技术 - PD重点方向",
-    "2. 其它",
-    "3. 人员状态",
-    "4. Support",
-    "5. 待办"
-]
-# 对每个节标题调用：
-mcp_google_docs_applyParagraphStyle(
-  documentId="10zY9LPzQpqYfUWx3hLAKhC0RonJeJBrrrVRkbTe0PHQ",
-  style={"namedStyleType": "NORMAL_TEXT"},
-  target={"textToFind": "各方向更新"}
-)
-# ... 重复6次
+**解决方案：分组父项用「加粗整行」，不要用 bullet；OP 子项才用 bullet。** 这样不依赖嵌套也能看出层级：
+
+```markdown
+1\. 技术 - PD重点方向
+
+**Zone Picking Phase 2（分区拣货二期）**  进行中
+
+- [OP-40026] Zone Picking Phase 2 主需求  进行中
+- [OP-40130] 后端开发  进行中
+- [OP-40383] Zone 2 ... Tote 复用无法自动释放  已上线
+
+**EXDD（效期优化）**
+
+- [OP-38175] EXDD优化项目  已上线
+- [OP-40132] EXDD 实验优化 V2  已上线
+
+2\. 其它
+
+- [OP-39775] 上架接口逻辑重构  已上线
+- ...
 ```
 
-### 步骤 5: 复制内容到正式文档
-
-正式例会文档 `18DKShN...` 中，新内容插入在文档顶部（最新期在最上面）。
-
-**方法**：
-1. 读取正式文档当前顶部内容的起始 index（通常是 1）
-2. 在 index 1 处 `replaceRangeWithMarkdown`（从 1 到 2，即插入到最前面）
-3. 插入后同样执行步骤 4 的节标题降级
-
-**直接写入正式文档**（不需要模板中转）：
-```python
-# 先找到上一期标题的位置作为插入终点
-mcp_google_docs_findElement(documentId="18DKShN...", textQuery="上一期日期")
-# 然后 replaceRangeWithMarkdown(startIndex=1, endIndex=上一期位置-1, markdown=内容)
-```
+其它渲染注意：
+- 节编号用 `1\. ` `2\. `（反斜杠转义），否则会被当成有序列表项。
+- 不要用 `##` 开节标题（会进大纲），用纯文本 `1. 技术 - PD重点方向` 即可。
+- `get_doc_content` / `get_doc_as_markdown` 多 tab 文档要带 `tab_id=""` 才读全；输出常超限会自动存文件，用 `read_file` / `Get-Content` 看落地文件。
 
 ---
 
@@ -226,18 +284,38 @@ mcp_google_docs_findElement(documentId="18DKShN...", textQuery="上一期日期"
 5. ❌ 按人名分组（不需要，平铺即可）
 6. ❌ 写 New 状态工单（那是排期中，没做）
 7. ❌ 用 `yami-ai-cli add` 安装新工具前不备份 mcp.json
+8. ❌ 分组子项用缩进 bullet 想做嵌套（会被拍平，改用「加粗父行 + bullet 子项」，见步骤5）
+9. ❌ 依赖 `google-docs` MCP（token 常失效），应首选 `google_workspace`
+10. ❌ 看到 MCP 面板"已连接"就以为能用——必须实际调一次 API 验证
+11. ❌ 一次性拉 query_id=82 全量（两万多条），必须带「时间+5人」双过滤
+
+---
+
+## 环境故障速查（2026-11-04 实战）
+
+| 症状 | 根因 | 处理 |
+|------|------|------|
+| openproject MCP 连不上 / 无日志 | `yami-openproject-mcp` 依赖 mcp SDK 1.x，uvx 默认装了 2.x 导致 `ModuleNotFoundError: mcp.server.fastmcp`，进程启动即崩 | mcp.json 的 openproject.args 里加 `"--with","mcp>=1.0,<2.0"`（和 yearning 一样钉版本），重连 |
+| OP API 返回 401 Unauthenticated | mcp.json 里的 `OPENPROJECT_API_KEY` 过期/被重置（服务器可达、key 长度对也会 401） | 让用户在 OP「我的账户→访问令牌」重置 API token，更新 mcp.json，重连。`.kiro/settings/` 受保护，Agent 改不了，要用户手动改 |
+| google-docs 工具 `invalid_grant 400` | 该 MCP 的 OAuth token 过期且无重授权入口 | 改用 `google_workspace`，首次会弹授权链接让用户完成 |
+| 用 curl 验证 OP key | `curl.exe -u ("apikey:"+$key) URL`，看 `-w "%{http_code}"`。200=好，401=失效 | — |
 
 ---
 
 ## 快速启动提示词
 
-用户说：**"帮我写这期例会，8月7号到8月26号"**
+用户说：**"帮我写这期例会，从 OP 看板读数据"**，并给出周期（如「2026-10-15 - 2026-11-04」）
 
-你的流程：
-1. 问用户有没有导出 OP Excel（有的话直接读取，最快）
-2. 没有则 API 查5个人本期工单（按 ID 逐个查）
-3. 过滤出 Launched/Done/In testing/In progress 状态
-4. 套用上方模板，写入模板文档
-5. 修复节标题为 Normal text
-6. 通知用户去正式文档 `18DKShN...` 里查看（或直接写入）
+验证过的流程（2026-11-04）：
+1. 读正式文档顶部最新一期，确认本期周期接续（步骤 1.5）
+2. 用 **Playwright 借浏览器会话查 OP**（方法 C），一次带「时间+5人(15,36,56,469,75)」双过滤，结果写 `docs/tmp/op-pd-period.json`
+3. 过滤出 Launched/Done/In testing/In progress 状态（New/On hold 不写）
+4. 套模板组织内容：重点方向（Zone Picking、EXDD 等）用「加粗父行 + bullet 子项」，其它平铺
+5. 用 **google_workspace** 三步法直接写正式文档顶部（步骤 4），注意嵌套拍平坑（步骤 5）
+6. `get_doc_content` 读回核对，把「ICQA/OE/Trans、人员状态、待办」这几处非技术内容列给用户确认
+   - 人员状态会跨期延续（如产假区间覆盖本期要保留），主动和上一期对照
+
+## 本期数据特征（参考，判断过滤是否合理）
+- 正常一期技术侧约 15~25 条工单；若查出几百条，一定是过滤没生效或拉了全量
+- 本期(10/15~11/04) 实得 24 条，可作量级基准
 
