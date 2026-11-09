@@ -116,6 +116,7 @@ adb -s emulator-6200 reverse tcp:8081 tcp:8081
 | 动作 | 命令（都加 `adb -s emulator-6200 shell`） |
 |---|---|
 | 扫码（WMS App） | `am broadcast -a android.intent.ACTION_DECODE_DATA --es barcode_string <码>`（`ScannerConfigService` 默认值；App 里改过扫码设置就以当前值为准） |
+| 扫码（Picking App） | 同一条广播：原生 `BarcodeScannerModule.java` 写死监听 `android.intent.ACTION_DECODE_DATA`，取 `barcode_string`（或 datawedge 的 `data_string`）。工牌、车号、Tote、格口、`COMPLETE` 都这样发（10879 零拣免合单走查实测） |
 | 点击 | `input tap <x> <y>`：坐标是截图像素（1080x1920），从上一张截图量 |
 | 精确找控件 | `uiautomator dump /sdcard/ui.xml` 再 `pull`，按 `text` / `resource-id` 读 `bounds` |
 | 输入 | `input text T50432`（空格写成 `%s`），再 `input tap` 点 Submit |
