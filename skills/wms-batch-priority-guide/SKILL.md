@@ -38,3 +38,9 @@ description: 分析或修改 WMS Batch 优先级（wh_batch.batch_priority）、
 - `zone_sort_value = tier×10^10 + batch_priority×100 + zone_qty×10 + size_digit`；tier：2 = 99,999,999 紧急置顶，1 = 对方 Zone 已领取，0 = 其他；size_digit：XL 9、L 3、S/PW 0；同值 `batch_id` 升序。
 - Group 取成员 Zone 2 侧最大值；「↑」基数改为所有仍有待领 Zone 任务的 Batch，无候选时按 0（同时修空指针）。
 - 改算法只改公共 SQL 片段 + Java 计算方法两处，并在 §J9 追加版本记录。
+
+## 验证「Multi Zone > Single Zone」时的坑（Bug#10881，11/09）
+
+- 跨 Zone 加权（`zone_qty×10`）只在排序值里，不写 `batch_priority`；Central 只显示原值，同为 700 的跨 Zone 与单 Zone 行看不出先后。验证要看 Zone 1 车领到哪张 Batch，不看原值。
+- `zone_qty` 排在「梯度 + 占比」之后（D4）：同一最早 EXSD、占比不同（跨 Zone 2/3 = 666 对单 Zone 3/3 = 700）时单 Zone 在前；N 是动态排名、只升不降，同 EXSD 不同轮次建的 Batch 也可能差 100，都会盖过 b。
+- gqc 有测试直接改库的 `wh_batch.status = 0`（不是合法 BatchStatus），这类 Batch 不进任何候选；gqc 池里有 2022 年 EXSD 的订单，N 被撑到 140 左右，不代表生产。
