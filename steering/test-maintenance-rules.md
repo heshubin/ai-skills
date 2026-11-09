@@ -52,6 +52,13 @@ Spock 中 `then:` 块里的 `1 * mock.method(...)` 会覆盖 `setup()` 里设置
 
 ---
 
+### 第5类：给共用 Service 新增注入依赖后，旧测试 NPE 或调用序列断言失败（2026-11 OP-40026 Bug#10879）
+
+wms-cloud-service 的 `OrderPickService`、`ConsolidationServiceImpl`、`ConsolidationRestImpl` 等大类，测试都是 `new Xxx(field: mock)` 手工装配：
+- 新增 `@Autowired` 字段后，凡是走到新调用点的旧测试都会 NPE。先 `git grep "new OrderPickService\|new ConsolidationServiceImpl\|new ConsolidationRestImpl" -- "*.groovy"` 找全装配点，逐个补 Mock（或真实轻量组件）。
+- `OrderPickCharacterizationSupport` 一族（`OrderPickServiceCharacterizationTest`、`PickingTaskFinishPwBranchTest`、`FinishGuideCompatTest` 等）用记录器断言**完整调用序列**：新依赖要在 support 里用 `recorded(Type, '字段名')` 接入，再把期望序列补上新调用（如 `zoneConsolidationExemptService.isExemptOnlyMainTask`）。这类改动是设计接受的「多一次调用」，测试里写注释说明原因，001 / 101 的序列应保持不变并保留断言。
+- `BoundSqlNormalizer.normalizeSql` 会去掉 `)` 后面的空格：`IN(?,?)FOR SHARE`、`IN(?,?)AND`。写 SQL 文本断言时按这个形态写，或用 `contains` 断言片段。
+
 ## 提交前自检清单
 
 修改测试文件后，git commit 之前必须执行：
