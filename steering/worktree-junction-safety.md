@@ -24,6 +24,24 @@ worktree 里的 `node_modules` 是指向主仓库的目录联接（`mklink /J`�
 - 用 `Remove-Item -Recurse` 删除联接或者联接所在的目录
 - 删除失败（Filename too long、Permission denied）之后换更强的命令重试。应该先查清楚有没有联接、是谁占用了文件
 
+## worktree remove 报 Permission denied，但其实已经删完了（2026-11-09 加）
+Bug#10880 收尾时遇到两次：
+- `wdb-10880`（已拆掉联接）执行 `git worktree remove`，报 `failed to delete '<路径>': Permission denied`。
+- `was-10880`（没有联接）也一样。
+
+查下来，git 已经注销了 worktree，目录里的文件也删光了，只剩一个空目录。用 `cmd /c rmdir "<worktree>"`（不带 `/s`）再删，报「另一个程序正在使用此文件」。说明有进程把这个目录当作当前目录，或者开着它的句柄，常见是之前步骤留下的终端会话。
+
+怎么判断删除已经完成：
+```powershell
+git -C <主仓库> worktree list                                     # 列表里没有这个 worktree
+Test-Path <主仓库>\.git\worktrees\<worktree名>                    # False
+[System.IO.Directory]::GetFileSystemEntries('<worktree>').Count   # 0
+```
+三项都满足，就说明只剩空目录。这时：
+- 可以继续执行 `git branch -d` 删本地分支。
+- 不要加 `--force` 重跑，也不要去杀不确定的进程。
+- 空目录留着没有影响。在报告里写明，等占用它的会话关闭后，再用 `cmd /c rmdir "<worktree>"` 删掉。不带 `/s` 的 rmdir 只能删空目录，不会误删内容。
+
 ## 怎么查有没有联接
 ```powershell
 Get-ChildItem <worktree> -Recurse -Depth 2 -Directory -Force | Where-Object { $_.LinkType -eq 'Junction' } | Select-Object FullName, Target
