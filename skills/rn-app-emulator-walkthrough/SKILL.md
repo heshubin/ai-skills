@@ -99,7 +99,14 @@ adb -s emulator-6200 reverse tcp:8081 tcp:8081
 
 - 优先复用已有 Debug APK，不跑 Gradle（纯 JS 改动都由 Metro 热更新）：设备上已装过就 `adb shell pm path com.wmsrn` 找到 `base.apk` 并 `pull` 存一份，之后每轮 `adb install -r` 它；只有原生改动或设备上没装才跑 Gradle（构建槽规则见第 8 节）。
 - Picking App 首次装好后，如果连不上 Metro，可用 `run-as com.picking` 写 `debug_http_host = localhost:8081`。WMS App（`com.wmsrn`）同理：`pm clear` 之后重装会丢这项，App 报 `Unable to load script` 且 Metro 日志没有 BUNDLE 行时，push 一个 `shared_prefs/com.wmsrn_preferences.xml`（`<string name="debug_http_host">localhost:8081</string>`）再 `run-as com.wmsrn cp` 进去（10816 实测）。
-- worktree 里启动 Metro 时盘符要用大写 `D:\`（`cd /d D:\code\...`）。用小写 `d:\` 启动、而 `metro.config.js` 的 watchFolders 写 `D:/` 时，Metro 报 `Unable to resolve module @babel/runtime/helpers/interopRequireDefault`，文件明明存在（10816 实测）。
+- worktree 里启动 Metro 时，`cd /d` 的盘符大小写和 `metro.config.js` 的 watchFolders、nodeModulesPaths 都要和 node_modules 联接的 Target 一致。先看 `(Get-Item <worktree>\node_modules -Force).Target`：
+  - Target 是 `D:\...`：用 `cd /d D:\...`，watchFolders 写 `D:/...`（10816 实测）。
+  - Target 是 `d:\...`：全部用小写 `d:`（10879 实测，cpa-10879 的联接是小写）。
+  - 混用的两种报错：watchFolders 写 `D:/` 而联接是 `d:\`，报 `SHA-1 for file d:\...\metro-runtime\src\polyfills\require.js is not computed`；项目根是 `D:\`、watchFolders 是 `d:/`，报 `Unable to resolve module @babel/runtime/helpers/interopRequireDefault`，文件明明存在。
+  - 装 App 之前先在本机取一次包确认能打出来：`Invoke-WebRequest 'http://localhost:8081/index.bundle?platform=android&dev=true&minify=false' -OutFile <tmp>`，返回 200 且十几 MB 才算好（只请求本机，不碰网络）。
+- 用 `git checkout <旧提交> -- <文件>` 临时换回旧代码模拟老版本时，Metro 的文件监听可能没跟上：10879 换完后连续两次冷启动拿到的仍是新代码。换完先按上一条取一次包，在包里搜改动特有的常量名确认版本，不对就重启 Metro；重启 Metro 之后要重新 `pm clear` + 重装，保证「mock → Metro → 重装」顺序。
+- 验证「页面挂载时的回退 / 容错」：先用旧代码把 App 走到出错页并停住，再 `git checkout HEAD --` 换回新代码。Fast Refresh 会重新执行组件里 `[]` 依赖的 `useEffect`，新的挂载检查当场生效，可以看到页面自动回退（10879 PW 页回退 ScanTotes 实测）。
+- Picking App 冷启动一律回到 ScanWorkCard，没有导航状态持久化；「重进 App」后要扫工牌、选 Zone、扫车，由 `createPickingTask` 的续拣响应决定进哪页。需要在 force-stop 之后还记得的 mock 状态（例如车已绑完 Tote），存进 AsyncStorage（`LocalDataStorage`），不要只放在 JS 变量里。
 - 记重装时间：`adb shell dumpsys package com.wmsrn` 里的 `lastUpdateTime`（GMT）。
 - 启动：`adb shell monkey -p com.wmsrn -c android.intent.category.LAUNCHER 1`（或 `am start`）；冷启动前先 `am force-stop`。
 - npx 往 stderr 打 `npm warn ...` 时，PowerShell 把它当错误打断管道：先重定向到文件，再读文件。
@@ -165,6 +172,9 @@ AdbT @('-s','emulator-6200','shell','getprop','sys.boot_completed')
 - 构建槽：模拟器开着时编排者占一个槽，其余步骤同时最多跑 1 个 Maven / Gradle。
 
 **Kiro 终端的坑**：execute_pwsh 遇到较长的命令（循环、sleep、多条 adb）常提前返回 `^C`、退出码 -1，命令其实还在跑。拆成短命令，一条一条执行，再用输出文件、截图或进程列表确认结果。
+- 同一轮并行发出的几条命令，执行顺序不固定：10879 里 `pull` 跑在 `screencap` 前面，拉到的是上一张图。有先后依赖的（截图 → 拉取、广播序列 → 截图）分两轮发。
+- 截图被 `^C` 打断时，本地文件可能还是上一张：看 read_file 返回的字节数和状态栏时间是否变化，没变就换一个设备端文件名重截。
+- 多步广播可以写成一条后台 `Start-Process adb shell "am broadcast ...; sleep 4; ..."`，再单独等待、截图；不要在同一条命令里 sleep 等它跑完。
 
 ## 9 走查记录模板（`screens/walkthrough.md`）
 
