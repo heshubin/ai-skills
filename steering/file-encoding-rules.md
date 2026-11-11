@@ -101,3 +101,10 @@ git apply --whitespace=nowarn <patch-file>
 - [ ] 涉及中文注释/方法名的 `.groovy`/`.java` 文件尤其要检查
 - [ ] `git diff --stat` 与 `git diff --ignore-cr-at-eol --stat` 行数一致
 - [ ] 以上全部通过后才执行 `git commit`
+
+---
+
+## 在 agent 终端里跑 git 查看命令（2026-11）
+
+- **中文乱码**：PowerShell 默认按 GBK 解码 git 输出，提交信息里的中文会显示成「浜屾湡鏋氫妇」这类乱码。命令开头先加 `[Console]::OutputEncoding = [Text.Encoding]::UTF8;`。这只影响显示，不影响仓库内容。
+- **命令卡住到超时**：`git show`、`git log`、`git diff` 输出较长时会调起分页器（less），等待按键，命令一直挂到超时（exit -1、没有输出）。查看类命令一律写成 `git --no-pager -C <仓库> ...`。
