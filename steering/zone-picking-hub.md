@@ -313,3 +313,15 @@ description: WMS Zone Picking（分区拣货）二期开发的知识导航与一
     `ConsolidationSlotValidator` 的两条格口文案被 WMS App 的合单、换格口、卸车等 7 处共用，而且 `ZonePickingMessage` 注明不能改写，这次没动。
 207. wms-cloud-service 全量单测在 JDK 17 下，基线（`4ac8fb5c3`）就有 `ZoneCandidateQueryServiceTest` 1 failure + 6 errors：MyBatis OGNL 调 `Collections$EmptyList.size()` 时被模块系统拒绝（`InaccessibleObjectException ... does not "opens java.util"`）。11/03 的全量日志里这个类还是全过的，跑全量遇到时先在基线上复现一次，再判断是不是新问题（Bug#10879 验证，11/09）。
 208. wms-analytics-service 看板接口的请求 `WMSDashBoardRequest` 继承 central-core 的 `BaseRequestPage`，分页字段的 setter 有副作用（Bug#10880，11/09 javap 实测）：`setPageSize(null)` 存的是 **10**，`setStartColumn(null)` 存的是 0；JSON 里不带这个键时 setter 不会被调用，字段保持 null，Service 再按自己的缺省值（明细表 100）处理。所以前端不要发 `"pageSize": null`（`JSON.stringify` 会保留 null，只丢掉 undefined）；单测要模拟「不带 pageSize」时不要调 setter，否则拿到的是 10。另外 wms-dashboard 是 `Vue.use(ElementUI)`，没有指定 locale，Element 2.15.9 默认用 zh-CN。在英文页面里用 el-pagination 时，`total` / `sizes` / `jumper` 会显示「共 N 条」「条/页」「前往」。可以用 `layout="slot, prev, pager, next"`，在插槽里自己写英文总数；不要改全局 locale，那样会连带改掉一期页面的日期框。
+
+---
+
+## 生产夜间开关窗口验证的坑（OP-40026，2026-11-11）
+
+详细分析：`d:/code/kiroWP/docs/active/OP-40026/onsite-switch-window-risk/report.md`。
+
+- **只要组一次批，全仓待拣 Batch 的优先级就被改写**：二期开启时 `resetBatchPriority` 按 v2 公式（约为一期值 ×100）重算 002 全部 `status=1` 的 Batch，写入时取 `Math.max`，只升不降。手动 Create Batch 也会触发。关开关后这些大值留在表里，一期 `ORDER BY batch_priority DESC` 会先取它们，白天新建的 Batch 排在后面；已领一侧的跨 Zone Batch（status=2）不参与重算，排到最后。
+- **组 Group 是全仓范围**：`generateGroups` 把全仓未成组的 Group 模式 Task 组成 Group，不区分测试单和真实单。窗口内要暂停 002 的组批类 job（CreateBatchHandler 普通和 FRESH、LANJBatchHandler、CutOffLocalOrderBatchHandler、BatchBreakUpHandler、ClearWHNHandler），测试 Batch 只手动建。
+- **关开关前 Group 链路必须走完**：拣货中、停格口、托盘在途、Group Tote 未合单这四类，二期关后一期入口处理不了，会卡住（`sql/03` Q2–Q5 必须为 0）。关后未领取的 Group 要逐个 break-group。
+- **第一次开开关后不能回退代码**，止损只有关开关，或把 `Zone 2 Batch Units <=` 设为 0。
+- **发布前核对各分支是否包含 master**：用 `git merge-base --is-ancestor origin/master HEAD` 检查，central-packing-service 的 OP-40026 曾漏合 OP-39861（FedEx/OnTrac 直连打单）。
