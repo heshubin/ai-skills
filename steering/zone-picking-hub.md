@@ -324,4 +324,11 @@ description: WMS Zone Picking（分区拣货）二期开发的知识导航与一
 - **组 Group 是全仓范围**：`generateGroups` 把全仓未成组的 Group 模式 Task 组成 Group，不区分测试单和真实单。窗口内要暂停 002 的组批类 job（CreateBatchHandler 普通和 FRESH、LANJBatchHandler、CutOffLocalOrderBatchHandler、BatchBreakUpHandler、ClearWHNHandler），测试 Batch 只手动建。
 - **关开关前 Group 链路必须走完**：拣货中、停格口、托盘在途、Group Tote 未合单这四类，二期关后一期入口处理不了，会卡住（`sql/03` Q2–Q5 必须为 0）。关后未领取的 Group 要逐个 break-group。
 - **第一次开开关后不能回退代码**，止损只有关开关，或把 `Zone 2 Batch Units <=` 设为 0。
+- **扫空车会接管别人留下的拣货中老任务**（2026-11-13 Z2M009 事故，详见 `d:/code/kiroWP/docs/active/OP-40026/bug-stale-task-takeover/investigation.md`）：
+  - `OrderPickService.createPickingTask` 先执行一期的「换车续拣」`dealAbnormalTask` / `OrderPickMapper.xml queryAbnormalTask`。它挑一个同仓、同 Zone、同车型、`status = 1`、没有车指向的任务，`LIMIT 1` 且没有 ORDER BY，不限用户、时间、订单状态。
+  - 挑中后会改写 `task.cart_no`、`picking_user2`、`wh_picking_order.cart_no` 和 `wh_consolidation_task_detail.cart_no`，并绑定新车。
+  - 这一步在二期 `ZoneClaimRouter` 之前执行，跟二期开关无关，白天生产也会触发。Group 车走 `selectResumableGroupTask`，有同样的问题。
+  - 残留任务的来源：拣完后 `pickingTaskFinish` 没成功，订单却由另一侧走完、车被人工释放，任务就永远停在 1。
+  - 每次开开关前、新车初始化后，都要查「status = 1 超过 12 小时、没有车指向」的任务，期望 0 行。
+  - 现场口径：扫车后页面上的 Tote 或订单不是本次要领的，不要扫格口或停车位，先截图报技术。
 - **发布前核对各分支是否包含 master**：用 `git merge-base --is-ancestor origin/master HEAD` 检查，central-packing-service 的 OP-40026 曾漏合 OP-39861（FedEx/OnTrac 直连打单）。
