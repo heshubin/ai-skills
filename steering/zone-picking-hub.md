@@ -331,4 +331,10 @@ description: WMS Zone Picking（分区拣货）二期开发的知识导航与一
   - 残留任务的来源：拣完后 `pickingTaskFinish` 没成功，订单却由另一侧走完、车被人工释放，任务就永远停在 1。
   - 每次开开关前、新车初始化后，都要查「status = 1 超过 12 小时、没有车指向」的任务，期望 0 行。
   - 现场口径：扫车后页面上的 Tote 或订单不是本次要领的，不要扫格口或停车位，先截图报技术。
+- **旧版 Picking App 不能拣 Group 车**（2026-11-14 GB00002，生产）：
+  - 2.1.9 不认识 Group 的合并拣货行。扫一次 UPC 再扫 Tote，就按合并行的整行数量提交 `adjustLocation`（`picking_quantity` 等于 `item_quantity`，这次是 6）。
+  - 后端照收，把数量分到各订单并判定拣完，返回 `isComplete = 1`、`go_consolidation_slot = true`，App 直接跳到 Scan Consolidation Slot。
+  - 新版 2.1.10 按扫码次数计数（10846）。
+  - 现场重装后仍是 2.1.9，并显示「Latest」，原因是仓库 000 的 `wh_config` 版本号还没改成 2.1.10。
+  - 开二期开关前，必须确认所有会碰 Group 车的设备都装了新包。后端可以考虑在领 Group 车时校验 App 版本。
 - **发布前核对各分支是否包含 master**：用 `git merge-base --is-ancestor origin/master HEAD` 检查，central-packing-service 的 OP-40026 曾漏合 OP-39861（FedEx/OnTrac 直连打单）。
