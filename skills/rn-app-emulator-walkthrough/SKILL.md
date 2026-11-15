@@ -20,6 +20,8 @@ description: 在本机安卓模拟器或真机上，用 adb + Metro + 本地 moc
 
 agent 的循环就是：截图 → 看图 → 按坐标点 / 广播扫码 → 再截图。
 
+**只是「打包 / 装到设备」时不要用本技能**：直接按 steering `android-app-testing` 的「拉最新代码 / 打包 / 安装到设备」一节做（clean + assembleRelease + install -r），不装 Debug 包、不写 mock、不起 Metro（2026-11-15 主人纠正）。
+
 和其他技能的分工：要用真实账号登录真实环境，用 `wms-app-login`（Appium）；只截图用 `android-screenshot`；录屏用 `adb-screen-recorder`。本技能用于「本地 mock、不连后端」的界面走查与验收。
 
 ## 1 硬约束（先读 steering `no-production-access`）
@@ -35,7 +37,8 @@ agent 的循环就是：截图 → 看图 → 按坐标点 / 广播扫码 → �
 $sdk = 'D:\ADT\Android\android-sdk-windows'
 & "$sdk\emulator\emulator.exe" -list-avds      # Pixel（Android 8.0，1080x1920，420 dpi ≈ 411 dp 宽）、Medium_Phone_API_36.0（更重）
 # 默认端口 5554/5555 被 Hyper-V 保留（netsh interface ipv4 show excludedportrange protocol=tcp 可看到 5484–5683），6000 又被本机 postgres 占着
-& "$sdk\emulator\emulator.exe" -avd Pixel -memory 2048 -no-boot-anim -no-snapshot-load -no-snapshot-save -no-audio -ports 6200,6201
+& "$sdk\emulator\emulator.exe" -avd Pixel -memory 2048 -no-boot-anim -no-snapshot-load -no-snapshot-save -no-audio -ports 6200,6201 -dns-server 8.8.8.8,8.8.4.4
+# 开机后按 steering android-app-testing「模拟器网络」一节自检；离线 mock 走查时再手动开飞行模式
 ```
 
 - 用后台进程启动（Kiro 里用 control_pwsh_process start），不要在前台命令里跑。

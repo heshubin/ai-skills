@@ -1,7 +1,7 @@
 ---
 inclusion: auto
 name: android-app-testing
-description: 打包安装或调试 WMS App/Picking App、Metro 热更新、logcat、真机截图、Appium 自动登录时使用。触发词：启动 WMS, 启动 Picking, 打包, Release 包, Debug 包, Metro, 8081, adb, logcat, 真机, Appium, 安装 apk
+description: 打包安装或调试 WMS App/Picking App、装到手机或虚拟机、模拟器联网检测、Metro 热更新、logcat、真机截图、Appium 自动登录时使用。触发词：启动 WMS, 启动 Picking, 打包, Release 包, Debug 包, 安装到设备, 装到手机, 装到虚拟机, 模拟器, 没有网络, Metro, 8081, adb, logcat, 真机, Appium, 安装 apk
 ---
 
 # Android App 测试 SOP
@@ -18,6 +18,72 @@ description: 打包安装或调试 WMS App/Picking App、Metro 热更新、logca
 | Picking App | `com.picking` | `com.picking/.MainActivity` | `d:\code\central-picking-app` | `android/app/my-release-key.keystore`（密码见 gradle.properties）|
 
 > 用户说"启动 WMS"就用 `com.wmsrn`，说"启动 Picking"就用 `com.picking`，不需要再确认。
+
+---
+
+## 🚀 主人说「拉最新代码 / 打包 / 安装到设备」：照下面直接做，要准、要快
+
+来源：2026-11-15 主人纠正。主人要的是「拉代码 → clean → assembleRelease → 装上」，我却先装 Debug 包、写 mock、起 Metro，绕了二十多分钟还漏了 clean。
+
+**设备**：可以是 USB 真机，也可以是本机虚拟机（`emulator-6200`）。先 `adb devices` 看清楚有几台。只有一台就直接装；有多台再问主人装哪台；一台都没有，说「装到虚拟机」就按下面「模拟器网络」一节启动，说「装到手机」就停下来提醒主人插好 USB。
+
+**步骤**（两个 App 串行做，每个 Release 构建本机要 9–11 分钟，放后台跑并写日志，每 2–3 分钟看一次进度）：
+
+```powershell
+# WMS App（分支以当前分支为准，例如 OP-40026-RN）
+git -C D:\code\WMS-front-end pull --ff-only
+cd D:\code\WMS-front-end\wms-rn\android
+.\gradlew clean
+.\gradlew assembleRelease
+adb -s <设备> install -r app/build/outputs/apk/release/app-release.apk
+
+# Picking App（例如 OP-40026）
+git -C D:\code\central-picking-app pull --ff-only
+cd D:\code\central-picking-app\android
+.\gradlew clean
+.\gradlew assembleRelease
+adb -s <设备> install -r app/build/outputs/apk/release/app-release.apk
+```
+
+**必须做**
+- pull 前看 `git status`。有未提交改动（尤其是以前走查留下的临时 mock、改过的 baseURL）先报给主人，不要带进 Release 包。
+- `install -r` 报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`，说明设备上原来装的是 Debug 签名的包：先 `adb uninstall <包名>` 再装，并告诉主人 App 数据被清了。
+- 装完核对：`dumpsys package <包名>` 的 versionName、lastUpdateTime 是刚装的版本，pkgFlags 里**没有** DEBUGGABLE。
+- 回报一张表：App、分支、提交、版本、安装时间。
+
+**不要做**
+- 主人要的是装包时，不要装 Debug 包、不要写 mock、不要起 Metro。那一套是「本地 mock 走查」用的（skill `rn-app-emulator-walkthrough`），只在主人说要走查页面时才做。
+- 不要跳过 `clean`，也不要拿以前打好的旧 APK 代替重新构建。
+- 不要两个 Gradle 同时跑：模拟器开着的时候内存只够跑一个。
+
+**Release 包默认连生产**：装完只报告，不主动启动。主人要启动时提醒：Picking 先扫 `GQC` 条码切换环境，WMS 先在 Server Settings 里切到 GQC。
+
+---
+
+## 🌐 模拟器网络：每次启动后自动检测，有问题马上报
+
+来源：2026-11-15。模拟器关了飞行模式、WiFi 也显示已连接，但 Chrome 提示 No internet connection。我前一轮只查了 airplane_mode，没测网络，是主人自己发现的。原因是模拟器启动时继承了本机网卡排在前面的内网/VPN DNS（10.10.0.100、172.31.0.2），在模拟器里解析不了任何域名。
+
+**启动命令默认带 DNS**（不再等出问题才加）：
+
+```powershell
+D:\ADT\Android\android-sdk-windows\emulator\emulator.exe -avd Pixel -memory 2048 -no-boot-anim -no-snapshot-load -no-snapshot-save -no-audio -ports 6200,6201 -dns-server 8.8.8.8,8.8.4.4
+```
+
+**开机后（`sys.boot_completed` = 1）立刻自检，结果写进回复**：
+
+| 检查 | 命令（都加 `adb -s emulator-6200 shell`） | 正常结果 |
+|---|---|---|
+| 飞行模式 | `settings get global airplane_mode_on` | `0`（要走 mock 离线走查时才应该是 `1`） |
+| 网络已连接 | `dumpsys connectivity`，看 `Active default network` 和 WIFI 的 `CONNECTED/CONNECTED` | 有默认网络，WIFI 已连接 |
+| 域名能解析 | `ping -c 1 -W 3 www.google.com` | 第一行是 `PING www.google.com (x.x.x.x)` |
+| GQC 能解析 | `ping -c 1 -W 3 gqc-centralapi.yamibuy.tech` | 第一行带 IP |
+
+- 只看「能不能解析出 IP」。模拟器的用户态网络不转发 ICMP，`ping` 外网 100% 丢包是正常的，不能据此判断断网。
+- 报 `unknown host`、`getprop net.dns1` 为空：DNS 不可用。用上面带 `-dns-server` 的命令重启模拟器（App 和数据都还在），再自检一遍。
+- 没有默认网络：先看飞行模式，再看本机自己能否上网（`Resolve-DnsName www.google.com`）。本机也不通就直接告诉主人，不要反复重启模拟器。
+- 自检不过：**马上在回复里讲清楚哪一项失败、原因、准备怎么处理**。不要只说「已启动」。
+- 联网之前，如果做过离线 mock 走查，先 `pm clear <包名>`，防止排队的埋点发往线上。
 
 ---
 
@@ -298,7 +364,7 @@ pip install Appium-Python-Client selenium
 - 根因：Windows（Hyper-V / WinNAT）把 TCP 端口段保留掉了，`netsh interface ipv4 show excludedportrange protocol=tcp` 能看到 5484–5583、5584–5683 都在保留段里，模拟器默认的 console/adb 端口（5554–5585）一个都绑不上。保留段每次开机可能变化。
 - 解法：用 `-ports <console>,<adb>` 指定保留段以外的端口，先用 `netstat -ano` 确认没人占用。6000 被本机 postgres 占着（console 绑不上会打 `bind: not connected`，adb 一直 offline），现在用的是 `-ports 6200,6201`，adb 设备名是 `emulator-6200`。模拟器会警告 adb 端口不在推荐范围，实际能用；如果 `adb devices` 同时列出 `127.0.0.1:6201` 和 `emulator-6200`，`adb disconnect 127.0.0.1:6201` 只留一个。
 - 旧快照与新版模拟器不兼容时会报 `Failed to load snapshot 'default_boot'` 然后卡住，adb 一直 offline：加 `-no-snapshot-load` 冷启动。
-- 实际用的命令：`D:\ADT\Android\android-sdk-windows\emulator\emulator.exe -avd Pixel -memory 2048 -no-boot-anim -no-snapshot-load -no-snapshot-save -no-audio -ports 6200,6201`（Pixel：Android 8.0、x86、1080x1920；另有 Medium_Phone_API_36.0，更重）。
+- 实际用的命令：`D:\ADT\Android\android-sdk-windows\emulator\emulator.exe -avd Pixel -memory 2048 -no-boot-anim -no-snapshot-load -no-snapshot-save -no-audio -ports 6200,6201 -dns-server 8.8.8.8,8.8.4.4`（2026-11-15 起默认带 DNS，原因见上面「模拟器网络」一节）（Pixel：Android 8.0、x86、1080x1920；另有 Medium_Phone_API_36.0，更重）。
 - 内存：qemu 进程约占 2.6 GB。本机 31 GB 内存，曾 3 次因多个 Maven 全量测试同时跑而死机；模拟器开着时同一时间只跑 1 个 Maven/Gradle 构建。
 - 模拟器镜像默认是飞行模式：Metro 用 `adb reverse tcp:8081 tcp:8081` 连，不依赖模拟器联网。
 
