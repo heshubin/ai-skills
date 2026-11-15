@@ -254,6 +254,22 @@ COMMIT;   -- 行数都对才提交，否则 ROLLBACK
 - **别的 Zone 已领取或已拣完**：订单池、shipping_status、batch 状态都保持不变（第 8、9、11 步的 NOT EXISTS 已经处理）。只把被误领的这一侧退回去。
 - **第 2 步的期望行数**：MySQL 默认只统计值真正变化的行。没绑 Tote 的任务这一步是 0 行，属于正常。
 
+## 五点五、场景 D：二期 Group 车误领（OP-40026，`GroupClaimTxService.claimGroupNested`）
+
+判据：车的 `picking_task_id` 指向 `task_type = 2`（GROUP）的任务行；`wh_group_batch.picking_task_id` = 该行，成员 `wh_batch_zone.group_batch_id` = Group 的 rec_id。
+
+Group 领取额外写了这些（在场景 C 的基础上）：
+- `wh_group_batch`：status 0→1（WAIT_PICK→PICKING），写 cart_no、picking_user、edit_user，`picking_task_id` = Group 任务行。撤销：status=0，cart_no=''、picking_user=''、picking_task_id=0（列默认值）。
+- 新插一行 Group 拣货任务（task_type=2、zone_id=2，没有 picking_order / item 行），车指向它。撤销：释放车后 DELETE 这一行。
+- 成员 Task CAS 0→1，同时写 `first_claim_user`、`first_claim_dtm`（未写过才写）。撤销时复位为 ''、0。
+- 成员 Zone 行 0→1；`wh_batch_zone.picking_task_id`、`group_batch_id` 保留。
+- 领取加分 `promoteOnClaim`：另一侧 Zone 仍待领取时 `batch_priority += 100000`（`ZoneSortValueCalculator.CLAIM_PROMOTE_STEP`，封顶 NON_URGENT_MAX），edit_user 写领取人。撤销时减回去，WHERE 带当前值做守卫。
+- Group 绑 Tote（`occupyGroupTote` + `bindMemberOrdersTote`）：全部成员订单写同一个 Tote，合单明细 tote_no 同步。撤销：Tote flag 3→0，picking_order.tote_no=NULL（预建默认值），明细按场景 C 复位。
+- 订单池、shipping_status、流程记录（type=3 的 operation_ref_id 是**成员 Task**，不是 Group 任务行）同场景 C。
+- `promoteMembersWithZone1Pending` 之后的 `batch_seq` 重写不用回滚。
+
+实例脚本：kiroWP `docs/active/GZ2M146-Group误领撤销/rollback_GB00004.sql`（2026-11-15，002 仓，GB00004 / Group 任务 1478747 / 成员 Task 1478699，Batch 2157962 跨 Zone，Zone1 未领）。
+
 ## 六、实例
 
 - **2026-11-07，001 仓，任务 1468102**：场景 A。测试账号 `nikki.ma(3450)` 用车 M01 领走 batch 2145962，共 12 单 95 行，都没拣、没绑 Tote。按第四节执行，期望行数依次为 batch 1、cart 1、pool 12、order_info 12、item 95、order 12、task 1、process_record 删 12 / 重开 12。
