@@ -42,6 +42,7 @@ $sdk = 'D:\ADT\Android\android-sdk-windows'
 - 等开机：`adb -s emulator-6200 shell getprop sys.boot_completed` 返回 `1`。设备名是 `emulator-6200`，所有命令都带 `-s emulator-6200`。
 - 报 `too many emulator instances` 却一个都没开：端口被保留，换 `-ports`；`Pixel.avd` 下残留的 `*.lock` 在没有模拟器进程时可以删。
 - 报 `Failed to load snapshot` 后 adb 一直 offline：加 `-no-snapshot-load` 冷启动。
+- 关了飞行模式、WiFi 显示已连接，但浏览器提示 No internet connection、`ping www.google.com` 报 `unknown host`，`getprop net.dns1` 为空：模拟器启动时继承了本机网卡里不可用的 DNS（本机「本地连接」排在前面的是 10.10.0.100、172.31.0.2 这类内网/VPN DNS）。启动参数加 `-dns-server 8.8.8.8,8.8.4.4` 重启即可（2026-11-15 实测）。注意模拟器里 ICMP ping 外网本来就不通，要看域名能否解析，或用 Chrome 打开网页确认。
 - 屏幕休眠时冷启动 App，可能弹 LogBox `current activity is null`：先 `input keyevent 224` 亮屏再启动。
 - 内存：qemu 约占 2.6 GB。本机曾 3 次因内存耗尽死机，模拟器开着时同一时间只跑 1 个 Maven / Gradle 构建，空闲内存低于 2 GB 就先关模拟器。
 - 真机：USB 连上后 `adb devices` 能看到序列号，下面的步骤把 `-s` 换成序列号即可，其余一样（真机通常联网，mock 和 `pm clear` 更要做）。
