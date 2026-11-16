@@ -131,11 +131,16 @@ ScanOos 是 `VStack` 直接排版，底栏 `Footer` 是 `position: absolute` 盖
 ```
 用户扫工牌 barcode
     ↓
-POST wms/checkUser/{barcode}
-    ↓ 返回 user_id, warehouse_number, site_code
-    ↓ 存入 AsyncStorage
+GET wms/orderPick/{barcode}/checkUser
+    ↓ 返回 user_id（工号）、user_name、warehouse_numbers
+    ↓ site_code 另从 GET wms/common/warehouses 按仓库号取
+    ↓ 存入 AsyncStorage 的 userData：user_id = 工牌 barcode 原文，worker_id = 工号
     ↓
 后续所有请求：
   Headers: { site_code: "us" }  ← 仅此一个，无 token
+  请求体：picking_user / in_user / operator = 工牌 barcode 原文
   后端：@VestaIgnore             ← 每个接口都要加
+        OrderPickService.getUserInfoByBarCode 按 barcode 查 xysc_admin_user，拼成「user_name(user_id)」写库
 ```
+
+- 2026-11-16 核对（OP-40026）：PW 停格口 `bindZoneCartToSlot` 的 `operator` 没有经过 `getUserInfoByBarCode`，追踪事件里存的是 barcode 原文，和 Batch 路径的「姓名(工号)」不一致。新增接口如果要记操作人，记得先转换。
