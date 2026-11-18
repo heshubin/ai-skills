@@ -109,6 +109,7 @@ central-picking-app 仓库里文件是 LF，本机 `core.autocrlf=true` 检出�
 - **看缓存**：`adb shell "run-as com.picking cat databases/RKStorage > /data/local/tmp/rk.db"` 后 pull，用 Python sqlite3 读 `catalystLocalStorage` 表的 `pickingData` / `routeName`，可以直接核对绑 Tote 后缓存里每单的 `tote_no`、`floor`（规则 5 的缓存问题就靠这个看）。
 - **截图**：`adb shell screencap -p /sdcard/s.png` + `adb pull`（不要 `exec-out >`）；截到全黑先 `input keyevent KEYCODE_WAKEUP`、`svc power stayon true`。
 - **在 worktree 里跑 Metro**（Bug#10801 走查）：worktree 的 `node_modules` 是目录联接，Metro 解析不到，临时在 `metro.config.js` 加 `watchFolders` 与 `resolver.nodeModulesPaths` 指向 `D:/code/central-picking-app/node_modules`，走完和 instance.ts 一起 `git checkout --`。
+- **装 debug 包报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`**（11/17 B54 走查）：Pixel 上可能装着 release 包（签名不同），`install -r` 装不上，要先 `uninstall com.picking`。走完 `pm clear` 后卸载 debug 包，用主目录 `android\app\build\outputs\apk\release\app-release.apk` 装回原来的包。
 - **收尾顺序**（11/03–11/04 adb 服务卡死三次，都在 Metro 停掉之后）：先 `am force-stop com.picking`，再 `reverse --remove-all`，最后停 Metro。App 经 reverse 不停重连已关的 8081，会把 adb 拖死。
 
 ## 规则8：ScanOos 等扫码页没有滚动，页面加内容前先算高度（Bug#10801）
@@ -122,6 +123,7 @@ ScanOos 是 `VStack` 直接排版，底栏 `Footer` 是 `position: absolute` 盖
 - `app-navigator.tsx` 的 `AppNavigator` 调了 `useZone()`，选 Zone 时会重渲染。给页面套 HOC（如加底部条）必须在模块顶层生成包装组件，不能在 JSX 里 `component={withX(Page)}`，否则每次重渲染页面都会重挂载、丢状态。
 - `AndroidManifest.xml` 没有 `VIBRATE` 权限：JS 里调 RN `Vibration` 没有效果或报 SecurityException，加权限要重打原生包。需要「轻振一次」的交互先按「没有现成能力」处理。
 - 扫码事件是 `BarcodeScanner` 原生模块的 `barcodeScan`，多个监听会同时收到。弹层（RN `Modal`）不改变页面 focus，弹层打开时下面页面的扫码处理照常执行；想让弹层不挡视线，就在弹层里用 `useBarcodeScanner().addBarcodeListener` 收到扫码时关闭自己（版本详情卡就是这样做的）。
+- 确认框（OP-40026 B54 起）：全局 `ConfirmDialog`（`showConfirmDialog`）的按钮写死为 `CANCEL` / `OK`，Cancel 也没有回调，而且只有挂了 `<ConfirmDialog />` 的页面才会显示。要自定按钮文案或在 Cancel 时回退状态，就用同文件导出的受控组件 `ConfirmDialogView`（visible、confirmText、cancelText、onConfirm、onCancel），由页面自己管开关。扫码页弹窗期间要屏蔽扫码，用 ref 记弹窗状态，在扫码处理开头判断。
 - 长按类交互在模拟器上用 `adb shell input swipe x y x y <毫秒>` 模拟；想拍「按住中途」的图，在同一条 adb shell 里写 `input swipe … & sleep 1.9; screencap -p …; wait`，只占一条 adb 命令。连续多条 `input` 时偶尔会打印 `Killed`（`input` 进程被杀，按下事件没有抬起），出现后那一组结果不可信，单独重测。
 
 ---
