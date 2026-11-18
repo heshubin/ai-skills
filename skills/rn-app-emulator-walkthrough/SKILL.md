@@ -200,6 +200,14 @@ AdbT @('-s','emulator-6200','shell','getprop','sys.boot_completed')
 - 连续广播每步只隔 3 秒时，ScanTote → ScanBin 偶尔读到旧的 locationIndex（报 `WRONG BIN` 但 Expected 是上一行），属于存储写入时序，不是业务改动引起；换行后先截图确认页面再扫。
 - 后台起 Metro 用的 `cmd /c "cd /d <worktree> && ..."`，停 Metro 后目录句柄可能还被占着：`git worktree remove` 会卡在 `Deletion of directory ... failed. Should I try again? (y/n)` 等输入，Kiro 终端直到超时。遇到时结束 git 进程，`git worktree prune` 清记录，剩下的空目录等句柄释放后再删（先确认里面已经没有联接）。
 
+## 11 USB 真机 + Debug 包 + Metro 的补充（2026-11-18，Zebra TC51，OP-40026 合单 UI 走查）
+
+- **先查 assets 里有没有旧 bundle**：`wms-rn/android/app/src/main/assets/index.android.bundle` 被 .gitignore 忽略，`git status` 看不到，以前打包留下的文件会一直放在那里（这次是 08-15 的，4.8 MB）。它会被打进 Debug 包，Metro 连不上时 App 回退去跑这个旧 bundle：生产地址，没有 mock。`assembleDebug` 之前先把它移到 docs/tmp 备份，装完用 ZipFile 看一眼 APK 的 `assets/` 下只剩 fonts。
+- **wms-rn 的 mock 挂法**：在 `apiClient.ts` 的 `axios.create` 里加 `adapter`，`ZONE_MOCK_ENABLED` 保持 false。zone 请求照常走 `CommonService → ApiClient`，由 adapter 转给 `getZoneMockResponse`，这样 zone 请求在 logcat 里也有 `[MOCK]`。`ServerConfigService.testConnection` 会自己 `axios.create` 一个实例，也要挂上 adapter。登录 mock `wms/common/loginWithoutWarehouseNum` 返回两个仓时，页面会出现仓库下拉框，再点一次 Login 才能进首页。
+- **多条 input 合成一条 adb shell**：`Start-Process adb -ArgumentList '-s',<sn>,'shell','input tap ...; input text ...'` 在 TC51 上没有任何效果，截图和之前一模一样（字节数都相同）。整条命令要用双引号包起来当成一个参数，例如 `'"input tap 360 562 && input text mockuser && echo OK"'`，看到 OK 才算执行了。
+- **键盘弹起后坐标会变**：登录页 User 框获得焦点后整个表单上移约 260 px，密码框从 y=722 移到 y=460。每输入一项都先截图，再量下一个坐标，或者用 `input keyevent 66` 提交。
+- **在 Kiro 里起 Metro**：execute_pwsh 遇到带 `--port` 的 start 命令会直接拒绝执行（就算加了 run_in_background 也一样）。改用 `Start-Process cmd.exe -ArgumentList '/c','cd /d <App 目录> && npm start -- --reset-cache > <日志> 2>&1' -WindowStyle Hidden -PassThru`，默认端口就是 8081。Gradle 同时在跑时，第一次取 bundle 要 5 分钟以上，`Invoke-WebRequest` 的超时要设长一点。
+
 ## 相关
 
 - steering：`no-production-access`（硬约束）、`android-app-testing`（打包、Metro、logcat、Appium）
