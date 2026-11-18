@@ -27,6 +27,16 @@ D:\maven\apache-maven-3.9.11\bin\mvn.cmd package -s "D:\maven\apache-maven-3.9.1
 
 > 注意：PowerShell 中 `-D` 参数需要用引号包裹，避免被解析为 PowerShell 参数。例如 `"-Dtest=XxxTest"`
 
+### agent 终端里跑 Maven（2026-11-17，OP-40026 group-break-to-single 实测）
+
+- `mvn` 不在 agent 终端的 PATH 里，直接写 `mvn` 会报「不是内部或外部命令」，要写全路径或先把 `D:\maven\apache-maven-3.9.11\bin` 加进 PATH。
+- 前台命令跑到 2 分钟左右会被中断（输出只有 `^C`、exit -1），给了更长的 timeout 也一样。带编译的单测一律后台跑，跑完再读日志。
+- 后台跑时，PowerShell 的 `*> 文件` 重定向没有生成日志文件；改用 `cmd /c` 包住整条命令，在 cmd 里重定向才有日志：
+
+```powershell
+cmd /c "cd /d d:\code\<仓库或 worktree>&& set JAVA_HOME=C:\Program Files\Java\jdk-1.8&& set PATH=C:\Program Files\Java\jdk-1.8\bin;D:\maven\apache-maven-3.9.11\bin;%PATH%&& mvn -o -pl wms-cloud-service -am test -Dtest=XxxTest,YyyTest -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false > d:\code\kiroWP\docs\tmp\xxx.log 2>&1"
+```
+
 ## Java 环境
 
 - **JDK 路径**: `C:\Program Files\Java\jdk-17`
