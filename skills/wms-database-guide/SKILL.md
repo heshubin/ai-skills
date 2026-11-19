@@ -537,6 +537,42 @@ WHERE im.item_number = ?;
 
 ---
 
+## 十四、格口：Parking Slot 与 Consolidation Slot（2026-11 实查，OP-40026）
+
+两类格口**不在同一张表**，不要以为都在 `wh_parking_slot`：
+
+| 格口 | 主数据 | 区分 | 编码 |
+|---|---|---|---|
+| Parking Slot（停车格口） | `wh_parking_slot.parking_slot` | 表里只有这一类，没有类型字段；`zone_id` 0 未划分 / 1 NJFC / 2 SFC；`status` 0 无效 / 1 有效（**不是占用**） | 一期 `PRK{仓}{序号}`（如 `PRK00201`、特殊的 `PRK002SFC`）、001 仓 `ORK00199`；二期 `Z1PS###`、`Z2PS###` |
+| Consolidation Slot（合单格口） | `wh_storage_location.location_no` | `location_type = 51`（`LocationTypeEnum.CONSOLIDATION_SLOT`），Zone 看 `zone_id` | `Z{zone}CS{序号}`（`Z1CS001`、`Z2CS001`）；虚拟到达格口 `Z1CS999`（二期 Zone 2 随托盘下车写入，无物理位置） |
+| 参照：PW Put Wall Slot | `wh_storage_location` | `location_type = 8` | `P01F101` 一类，和合单格口无关 |
+
+**判断占用一律查车表** `wh_picking_cart.park_type + parking_slot`（两类格口共用这一对字段）：`park_type` 0 未停放 / 1 Parking Slot / 2 Con Slot。不要用下面两个字段判断占用：
+- `wh_storage_location.flag`（con slot）：设计上 3 = 占用，但代码只在释放时置 0，从不置 3，数据里永远是 0。
+- `wh_parking_slot.cart_count`：增减分散在 wms-cloud（`bindCartAndParkingSlot` +1）和 central-packing（`updateCartAndParkingSlot` -1），其他绑定 / 释放路径都不改，实测和实际车数差很多，还有负数。
+
+**车停在哪个合单格口**的权威来源是 `wh_consolidation_task_detail.consolidation_no`（每个 Zone 侧明细一条，配 `slot_bound_dtm`、`slot_release_dtm`），`scanSlot` 用它列格口上的车；`wh_consolidation_task.consolidation_no` 只是 Main Zone 侧的冗余快照，只读不判。
+
+其他带格口号的字段：`wh_picking_order.parking_slot`（订单拣完绑的 Parking Slot）、`wh_picking_order.slot_no`（**PW Put Wall 格口**，不是合单格口）、`wh_transship_truck_out_pallet.slot_no`（二期托盘来源格口 Z2CS / Z2PS）。`wh_batch_zone` 没有格口字段。
+
+已知坑：
+- central-packing 打包时 `updateCartAndParkingSlot` 只清 `parking_slot` 不清 `park_type`，会留下 `park_type = 1` 但 `parking_slot` 为空的半态车；按 `park_type` 统计会多算，要同时要求 `parking_slot` 非空。
+- 代码识别 con slot 用正则 `^Z(\d+)CS(\d+)$`（`ConsolidationSlotValidator`），Zone 从编码前缀解析，不读 `zone_id`；Parking Slot 不看前缀，一律查 `wh_parking_slot`。
+- 多处旧注释仍写 con slot 是「CON 前缀 12 位」，已过时。
+- 两张表都没有 `(warehouse_number, 编码)` 唯一约束，初始化 SQL 用 `NOT EXISTS` 防重；`wh_parking_slot` 在代码里没有 INSERT，新增只能靠 SQL 脚本。
+
+```sql
+-- 某仓合单格口及当前停放车数
+SELECT sl.location_no, sl.zone_id, COUNT(pc.rec_id) AS parked_carts
+FROM wh_storage_location sl
+LEFT JOIN wh_picking_cart pc
+       ON pc.parking_slot = sl.location_no AND pc.park_type = 2
+WHERE sl.warehouse_number = '002' AND sl.location_type = 51
+GROUP BY sl.location_no, sl.zone_id;
+```
+
+---
+
 ## 时间字段说明
 
 所有时间字段均为 Unix 时间戳（秒），查询时使用 `FROM_UNIXTIME()` 转换：
